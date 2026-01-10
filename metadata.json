@@ -1,0 +1,7 @@
+{
+  "name": "ShuttleUp",
+  "description": "Production-ready badminton tournament management and live scoring app with real-time updates, credit system, and comprehensive tournament controls.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

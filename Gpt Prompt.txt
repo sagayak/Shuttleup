@@ -1,0 +1,324 @@
+Role & Behavior
+
+You are a senior full-stack engineer, product architect, and Supabase specialist.
+Build a production-ready badminton tournament application named ShuttleUp.
+Prioritize clean architecture, scalability, security, and real-time updates.
+Use Supabase as the backend (auth, database, realtime, email OTP).
+Whenever database changes are required, ALWAYS output the exact SQL.
+Use 12-hour time format everywhere.
+
+🔹 App Overview
+
+App Name: ShuttleUp
+Type: Badminton Tournament Management & Live Scoring App
+Target Users: SuperAdmin, Tournament Organizers (Admins), Players, Scorers
+
+🔹 Tech Stack (MANDATORY)
+
+Frontend: Modern web/mobile-ready UI (React / Next.js preferred)
+
+Backend: Supabase (Postgres, Auth, Realtime, Storage)
+
+Payments: Razorpay
+
+Maps: Google Maps
+
+Exports: PDF, JPEG, CSV, JSON
+
+Realtime sync: Supabase Realtime
+
+Time format: 12-hour AM/PM only
+
+🔹 Supabase Credentials (USE EXACTLY)
+Supabase URL:
+https://yvbvcmfonnbhzwhrzbxt.supabase.co
+
+Anon Key:
+sb_publishable_t3kSHlUw6PyrywqBgZlRUA_w7DFBIPY
+
+🔹 Authentication & Users
+
+Email-based Signup / Login / Forgot Password
+
+OTP via Supabase Email OTP
+
+On first signup or password reset → OTP required
+
+Signup fields:
+
+Name
+
+Username (unique)
+
+Email
+
+Password
+
+Auto-assign numeric UserID (shareable with organizers)
+
+Roles:
+
+SuperAdmin (me)
+
+Admin (Organizer) – pays 200 credits
+
+Player
+
+Scorer (via PIN)
+
+🔹 SuperAdmin Rules
+
+Super PIN: 31218
+
+Always require PIN on SuperAdmin login
+
+Can:
+
+Add/remove credits for any user
+
+Control discounts
+
+Override tournaments
+
+Manage all data
+
+🔹 Credits & Payments
+
+1 Credit = ₹1
+
+Users can buy credits
+
+Hosting a tournament costs 200 credits
+
+Integrate Razorpay
+
+Ask me for:
+
+Razorpay Key ID
+
+Key Secret
+
+Webhook secret
+
+Maintain transaction logs
+
+Deduct & validate credits atomically
+
+🔹 Tournament Features (Organizer)
+Creation
+
+Tournament Name
+
+Tournament ID (optional 4 digits; else auto-increment starting 1000)
+
+Start & End Date + Time
+
+Google Maps location or address input
+
+Format:
+
+League
+
+Knockout
+
+PUBLIC or PROTECTED
+
+Player limit (optional)
+
+Team limit (optional)
+
+Management
+
+Add / Edit / Delete teams
+
+Add members per team (up to 20)
+
+Bulk import/export teams & players
+
+Make others Admin
+
+Approve join requests
+
+Tie-ups between teams
+
+Lock tournament (irreversible)
+
+🔹 Scoring & Matches
+
+Set SCORER PIN (resettable)
+
+PIN-based or PIN-less scoring
+
+Live scoring UI with:
+
+Haptic feedback
+
+Undo
+
+Match points selectable (15 / 21 / custom)
+
+Match table:
+
+Match Order
+
+Date & Time
+
+Teams
+
+Umpiring
+
+Status (Scheduled / Live / Won / Lost)
+
+Sorting + Export (PDF, JPEG, CSV)
+
+🔹 Standings & Rankings
+
+Auto calculations:
+
+Match wins
+
+Set wins
+
+Point difference
+
+Head-to-head
+
+Organizer can reorder priority
+
+Choose top teams (Top 2 / 4 / 8 / 10)
+
+Rankings toggle:
+
+League table
+
+Elite teams
+
+Export rankings (PDF/JPEG)
+
+🔹 Team Dashboards
+
+Active squad
+
+Scheduled / Won / Lost matches
+
+Umpiring duties
+
+Upcoming matches
+
+Head-to-head stats
+
+Recent performance
+
+Summary table:
+
+Team Name
+
+Scheduled
+
+Played
+
+Wins
+
+Losses
+
+Umpiring
+
+🔹 Handbook / Rulebook System
+
+Default rulebook auto-generated
+
+Organizer can:
+
+Edit sections
+
+Add custom rules
+
+Import JSON
+
+Export JSON & PDF
+
+Reusable across tournaments
+
+🔹 Home Screen
+
+Total Teams
+
+Total Matches
+
+Live Now card
+
+Top 1 team
+
+Elite teams
+
+Handbook shortcut
+
+🔹 Realtime & Locks
+
+Supabase realtime sync across devices
+
+Once locked:
+
+Teams immutable
+
+Members immutable
+
+Matches immutable
+
+Match can start only after lock
+
+🔹 Data & SQL Rules (IMPORTANT)
+
+Use Postgres best practices
+
+Normalize schema
+
+Use UUIDs + numeric IDs
+
+Use RLS policies
+
+For every schema change, migration, or logic update → output SQL
+
+Provide:
+
+Tables
+
+Constraints
+
+Indexes
+
+Triggers
+
+RLS policies
+
+🔹 Deliverables (MANDATORY)
+
+Database schema (SQL)
+
+Auth & RLS setup
+
+API/data flow
+
+UI component structure
+
+Realtime logic
+
+Credit & payment flow
+
+Export/import formats
+
+Scoring logic formulas
+
+Edge cases & validations
+
+Security considerations
+
+🚀 Start by:
+
+Designing the Supabase database schema
+
+Writing all SQL
+
+Explaining the role & credit system
+
+Then move to frontend architecture

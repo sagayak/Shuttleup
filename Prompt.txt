@@ -1,0 +1,89 @@
+Give me a google studio prompt for below 
+I want to create an app with below idea give me ai studio prompt to do so
+app name : ShuttleUp
+
+1. Its a badminton tournament app
+2. a user should be able to login,signup and reset password using their email ID
+3. Use supabase as database to store all the information , use supabase to send OTPs also when resetting password for user 
+4. For the first time setup and if they forget password, supabase should be able to send OTP through email to reset 
+5. Users signing up should be able to give their Name, choose a username, Email ID and password , 
+from app, assign them a userid number, so if they want to be added to a tournament, 
+they should just give this number to the organizer
+6. Once logged in, a user can buy credits, 
+one credit = 1 rupee , setup a razorpay account for this ask me whatever details you need
+7. Give an option to Host tournament and Join tournaments, for a person to host tournament 
+they need 200 credits , manage credits vs user
+7.1. Create 3 roles, one superadmin, thats me, two admin(who buys tournament by paying 200 rs), three player, player can also be scorer using scorer PIN.
+8. Super user can control everything in the app. i can add as many credits to whoever i want. 
+and can control discounts, Set a super PIN, always ask this PIN for super user login - set PIN as 31218
+
+9. Organizer : who pays 200 rs can 
+	a.create tournament, can choose it to be flexible formats like League tables or Knockout brackets.
+	  while creating tournament, give options as Tournmanent name, 
+	  tournament ID( 4 digits,make it optional , they can choose it if its available, otherwise assign an incremental, starting from 1000)
+	  Start date and end date and time(give an option for time as well)
+	  If possible give google maps and can locate or enter address in a map
+	  Number of players(optional) -- if chosen, restrict number of entries, show tournament full
+	  Number of teams(optional ) -- if chosen , restrict number of teams one can add.
+	  
+	  
+	b.add teams,edit teams, delete teams 
+	c.make others admin, 
+	d. users join by raising a request to tournament ID, organizer should approve for a user to join in 
+	e. create a format, PUBLIC or PROTECTED, 
+		PUBLIC : anybody can join by themselves,no admin approval required, admin can restrict number of entries though 
+		PROTECTED(recommended) : Only the ones approved by admin can join, scorer needs a PIN to score
+	f. Set and Reset SCORER PIN, organizer only will be able to see it 
+	g. Add Tie-ups between Teams 
+	h. set number of players who can join, like 20 or 30 limit
+	i. Set number of teams that can be added , number of memebers per each team, upto 20 he can add.
+	j. Sets if scoring is with PIN or without PIN.
+    k. Create an admin dashboard only for admin, where he can change number of players, number of teams 
+		reset scorer PIN, change top teams calculations(Order of calculation like match wins, set wins, point difference, 
+		head to head). He can choose top teams, like top4, or Top8, or top 10 or top2, schedule knockouts, Lock tournament.
+		
+		
+9. For organizer, Add individual teams with member lists or use the bulk importer to upload large 
+participant rosters instantly.
+10.For organizer,Schedule matches manually with specific display orders, dates, times, and assigned officiating(optional)
+ teams for organized play. another team can be chosen for umpiriing or can put custom umpire names
+ 
+11. Use a pro-grade real-time scoring interface to track points with haptic feedback and a reliable undo function.
+12.Calculate standings automatically using an efficiency-weighted points system that rewards straight-set 
+victories and handles complex tie-breakers.
+13.Access detailed team dashboards that feature head-to-head rivalry records, recent form, and 
+specific set performance analytics.
+14. View celebratory overlays and clear visual progression bars that highlight individual set winners and the final match victor.
+15.Maintain a customizable tournament handbook to share official rules, protocols,
+ and scoring logic that can be printed or exported. Organizer should be able to Edit rules as he wants. Create sections etc.
+ give an option to import default rules and add on top of it. Handbook can be exported and IMported, may be use JSON for import and PDF and JSON for exports,
+ so that we can reuse handbooks. Generate a basic rulebook by default, organizer should be able generate basic rule book and edit on top of it
+ 
+16.Synchronize all tournament data in real-time across multiple devices using integrated cloud database functionality. Use Supabase for storing
+17. Once teams are finalized and tie ups are finalized, give an option for organzier to lock the tournament.
+A match can be started only if the teams are locked. and once the match is started, teams cannot be changed 
+or members cannot be added/removed to teams. Teams and league schedules should be locked.
+18. Under teams section, for each team, display active squad, cards of matches scheduled, won, lost and umpiring duty, 
+also display upcoming schedule specific to the team selected, head to head with other teams Recent performance.
+19. under all teams display in a table of Team Name,Scheduled,Played,Wins,Losses,umpiring 
+19. Give an option to bulk import players and teams. using a specific format, give an option to bulk export also,
+that we can just export for a tournament and reuse it in another tournament.
+ 19. Any supabase changes, always give me sql to update.
+ 
+20. For matches section, give an option to choose match points, 15,21 whatever admin wants. onces tie ups are done, 
+show a table below matches, with columns, MatchOrder(1,2,3 and so on), Date and Time(16-Jan-2026 6 PM) Teams(T1vsT2),Umpiring if available 
+Status(scheduled, lost,won , live etc),give an option to sort on matchorder or Date and time or status columns,
+give an option to export this table to either PDF or JPEG or csv
+
+21. Create a Rankings page, show top teams(elite teams) or league table, give a toggle between them , give an option to export this ass well to 
+either jpeg or pdf
+
+22. Everywhere always use 12 hour format 
+
+23. In the home screen display total teams, total matches , option for a scoring manifesto(handbook), Live now card, 
+Top1 team, top elite teams 
+ 
+ use below supabase credentials 
+   
+anon key - sb_publishable_t3kSHlUw6PyrywqBgZlRUA_w7DFBIPY
+URL - https://yvbvcmfonnbhzwhrzbxt.supabase.co

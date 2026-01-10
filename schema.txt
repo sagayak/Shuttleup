@@ -1,0 +1,138 @@
+
+-- Enable required extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- PROFILES TABLE
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+    user_numeric_id SERIAL UNIQUE,
+    username TEXT UNIQUE NOT NULL,
+    full_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    role TEXT DEFAULT 'player' CHECK (role IN ('superadmin', 'admin', 'player', 'scorer')),
+    credits INTEGER DEFAULT 0 CHECK (credits >= 0),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- TOURNAMENTS TABLE
+CREATE TABLE IF NOT EXISTS public.tournaments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tournament_numeric_id SERIAL UNIQUE,
+    name TEXT NOT NULL,
+    organizer_id UUID REFERENCES public.profiles(id) NOT NULL,
+    start_date TIMESTAMPTZ NOT NULL,
+    end_date TIMESTAMPTZ NOT NULL,
+    location TEXT,
+    lat_lng JSONB,
+    format TEXT DEFAULT 'knockout' CHECK (format IN ('league', 'knockout')),
+    privacy TEXT DEFAULT 'public' CHECK (privacy IN ('public', 'protected')),
+    player_limit INTEGER,
+    team_limit INTEGER,
+    scorer_pin TEXT,
+    is_locked BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- TEAMS TABLE
+CREATE TABLE IF NOT EXISTS public.teams (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tournament_id UUID REFERENCES public.tournaments(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- MATCHES TABLE
+CREATE TABLE IF NOT EXISTS public.matches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tournament_id UUID REFERENCES public.tournaments(id) ON DELETE CASCADE NOT NULL,
+    match_order INTEGER NOT NULL,
+    team_a_id UUID REFERENCES public.teams(id),
+    team_b_id UUID REFERENCES public.teams(id),
+    umpire_name TEXT,
+    scheduled_time TIMESTAMPTZ,
+    status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'live', 'completed', 'cancelled')),
+    score_a INTEGER DEFAULT 0,
+    score_b INTEGER DEFAULT 0,
+    sets_won_a INTEGER DEFAULT 0,
+    sets_won_b INTEGER DEFAULT 0,
+    winner_team_id UUID REFERENCES public.teams(id),
+    max_points INTEGER DEFAULT 21,
+    current_set INTEGER DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- CREDIT TRANSACTIONS
+CREATE TABLE IF NOT EXISTS public.credit_transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    profile_id UUID REFERENCES public.profiles(id) NOT NULL,
+    amount INTEGER NOT NULL,
+    type TEXT CHECK (type IN ('purchase', 'deduction', 'refund', 'admin_override')),
+    description TEXT,
+    razorpay_payment_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Set Serial Start
+ALTER SEQUENCE IF EXISTS tournaments_tournament_numeric_id_seq RESTART WITH 1000;
+
+-- RLS POLICIES
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+
+ALTER TABLE public.tournaments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Tournaments are viewable by everyone" ON public.tournaments FOR SELECT USING (true);
+CREATE POLICY "Organizers can insert tournaments" ON public.tournaments FOR INSERT WITH CHECK (auth.uid() = organizer_id);
+CREATE POLICY "Organizers can update own tournaments" ON public.tournaments FOR UPDATE USING (auth.uid() = organizer_id OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'superadmin'));
+
+ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Teams viewable by everyone" ON public.teams FOR SELECT USING (true);
+CREATE POLICY "Organizers can manage teams" ON public.teams FOR ALL USING (EXISTS (SELECT 1 FROM public.tournaments WHERE id = tournament_id AND organizer_id = auth.uid() AND is_locked = FALSE));
+
+ALTER TABLE public.matches ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Matches viewable by everyone" ON public.matches FOR SELECT USING (true);
+CREATE POLICY "Organizers or Scorers can update matches" ON public.matches FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM public.tournaments WHERE id = tournament_id AND organizer_id = auth.uid())
+    OR
+    status = 'live'
+);
+
+-- FUNCTIONS & TRIGGERS
+CREATE OR REPLACE FUNCTION public.handle_new_user() 
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, full_name, username, email, role, credits)
+  VALUES (
+    new.id, 
+    COALESCE(new.raw_user_meta_data->>'full_name', 'Player'), 
+    COALESCE(new.raw_user_meta_data->>'username', 'user_' || substr(new.id::text, 1, 8)),
+    new.email,
+    'player',
+    0
+  ) ON CONFLICT (id) DO NOTHING;
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- Credit Deduction RPC
+CREATE OR REPLACE FUNCTION public.deduct_credits_for_tournament(user_uuid UUID, cost INTEGER)
+RETURNS BOOLEAN AS $$
+DECLARE
+    current_credits INTEGER;
+BEGIN
+    SELECT credits INTO current_credits FROM public.profiles WHERE id = user_uuid FOR UPDATE;
+    IF current_credits < cost THEN
+        RAISE EXCEPTION 'Insufficient credits';
+    END IF;
+    UPDATE public.profiles SET credits = credits - cost WHERE id = user_uuid;
+    INSERT INTO public.credit_transactions (profile_id, amount, type, description)
+    VALUES (user_uuid, -cost, 'deduction', 'Tournament hosting fee');
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
