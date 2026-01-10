@@ -28,6 +28,9 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
     location: '',
   });
 
+  // Constants
+  const RAZORPAY_KEY = 'rzp_test_placeholder'; // REPLACE THIS WITH YOUR REAL KEY
+
   useEffect(() => {
     fetchTournaments();
   }, []);
@@ -42,71 +45,79 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
     setLoading(false);
   };
 
+  const finalizePayment = async (paymentId: string) => {
+    if (!profile) return;
+    setLoading(true);
+    try {
+      console.log("Finalizing payment for user:", profile.id, "Amount:", topUpAmount);
+      const { data, error } = await supabase.rpc('add_credits_after_payment', {
+        user_uuid: profile.id,
+        topup_amount: topUpAmount,
+        payment_id: paymentId
+      });
+
+      if (error) throw error;
+      
+      alert(`Successfully added ₹${topUpAmount} credits!`);
+      setIsTopUpOpen(false);
+      // Wait a moment then reload to sync profile
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err: any) {
+      console.error("RPC Error:", err);
+      alert("Payment verified but credit update failed in DB: " + err.message + ". Check if you ran the SQL schema!");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleTopUp = () => {
     if (!profile) return;
 
-    // Check if Razorpay is loaded
+    // Simulation Mode for development if key is placeholder
+    if (RAZORPAY_KEY === 'rzp_test_S2DiM1kIVHybBI') {
+      const confirmSim = window.confirm("You are using a placeholder Razorpay Key. Would you like to SIMULATE a successful payment to test the credit system?");
+      if (confirmSim) {
+        finalizePayment(`SIM_PAY_${Date.now()}`);
+        return;
+      }
+    }
+
+    // Real Razorpay Logic
     if (typeof window.Razorpay === 'undefined') {
-      alert("Razorpay SDK is still loading or blocked. Please refresh the page and try again.");
-      console.error("Razorpay script not found on window object.");
+      alert("Razorpay SDK not found. Please check your internet connection and disable any script blockers.");
       return;
     }
 
-    // Razorpay Configuration
-    // NOTE: You MUST replace 'rzp_test_placeholder' with a real Razorpay Key ID
     const options = {
-      key: 'rzp_test_S2DiM1kIVHybBI', 
-      amount: topUpAmount * 100, // Amount in paise
+      key: RAZORPAY_KEY, 
+      amount: topUpAmount * 100, 
       currency: "INR",
       name: "ShuttleUp",
       description: `Purchase ${topUpAmount} Credits`,
       image: "https://yvbvcmfonnbhzwhrzbxt.supabase.co/storage/v1/render/image/public/assets/logo.png",
       handler: async function (response: any) {
-        setLoading(true);
-        try {
-          const { data, error } = await supabase.rpc('add_credits_after_payment', {
-            user_uuid: profile.id,
-            topup_amount: topUpAmount,
-            payment_id: response.razorpay_payment_id
-          });
-
-          if (error) throw error;
-          
-          alert(`Successfully added ₹${topUpAmount} credits!`);
-          setIsTopUpOpen(false);
-          // Force a small delay then reload to refresh global profile state
-          setTimeout(() => window.location.reload(), 1000);
-        } catch (err: any) {
-          console.error("RPC Error:", err);
-          alert("Payment verified but credit update failed: " + err.message);
-        } finally {
-          setLoading(false);
-        }
+        finalizePayment(response.razorpay_payment_id);
       },
       prefill: {
         name: profile.full_name,
         email: profile.email,
       },
-      theme: {
-        color: "#2563eb",
-      },
+      theme: { color: "#2563eb" },
       modal: {
-        ondismiss: function() {
-          console.log('Razorpay modal closed by user');
-        }
+        ondismiss: () => console.log('Payment modal closed')
       }
     };
 
     try {
-      console.log("Opening Razorpay for amount:", topUpAmount);
+      console.log("Attempting to open Razorpay...");
       const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', function (response: any) {
-        alert("Payment Failed: " + response.error.description);
+      rzp.on('payment.failed', (resp: any) => {
+        alert("Payment Failed: " + resp.error.description);
       });
       rzp.open();
     } catch (err: any) {
-      console.error("Razorpay initialization error:", err);
-      alert("Error starting payment: " + err.message);
+      console.error("Razorpay Error:", err);
+      alert("Razorpay failed to open: " + err.message);
     }
   };
 
@@ -159,11 +170,11 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
       {/* Hero / Stats Section */}
       <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-8 text-white shadow-xl shadow-blue-200/50">
-          <h2 className="text-3xl font-bebas tracking-wide mb-1">WELCOME BACK,</h2>
+          <h2 className="text-3xl font-bebas tracking-wide mb-1 uppercase tracking-widest">WELCOME BACK,</h2>
           <p className="text-xl font-bold opacity-90">{profile?.full_name}</p>
           <div className="mt-8 flex items-end justify-between">
             <div>
-              <p className="text-xs uppercase tracking-widest opacity-70">User ID</p>
+              <p className="text-[10px] uppercase tracking-widest opacity-70 font-bold">User ID</p>
               <p className="text-2xl font-mono">#{profile?.user_numeric_id}</p>
             </div>
             <button 
@@ -176,16 +187,16 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
         </div>
 
         <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 flex flex-col justify-between">
-          <p className="text-slate-400 text-sm font-medium uppercase tracking-wider">Live Matches</p>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Live Now</p>
           <div className="mt-4 flex items-center gap-4">
             <span className="text-5xl font-bebas text-red-500">03</span>
             <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span>
           </div>
-          <p className="mt-4 text-slate-500 text-sm">Tournaments happening now across the platform.</p>
+          <p className="mt-4 text-slate-500 text-sm">Tournaments active right now.</p>
         </div>
 
         <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 flex flex-col justify-between">
-          <p className="text-slate-400 text-sm font-medium uppercase tracking-wider">Your Balance</p>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Your Balance</p>
           <p className="mt-4 text-5xl font-bebas text-slate-900">₹{profile?.credits}</p>
           <button 
             onClick={() => setIsTopUpOpen(true)}
@@ -205,7 +216,9 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {loading ? (
-              <p>Loading tournaments...</p>
+              <div className="col-span-2 py-20 flex justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
             ) : tournaments.length > 0 ? (
               tournaments.map((t) => (
                 <div 
@@ -217,20 +230,25 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
                     <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
                       {t.format}
                     </span>
-                    <span className="text-slate-400 font-mono text-xs">#{t.tournament_numeric_id}</span>
+                    <span className="text-slate-400 font-mono text-xs font-bold">#{t.tournament_numeric_id}</span>
                   </div>
                   <h4 className="text-lg font-bold text-slate-900 group-hover:text-blue-600 transition-colors mb-2">{t.name}</h4>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-slate-500 text-sm">
+                    <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                      {t.location}
+                      {t.location || 'Location TBA'}
                     </div>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                       Starts {new Date(t.start_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                    </p>
                   </div>
                 </div>
               ))
             ) : (
               <div className="col-span-2 py-20 bg-white rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400">
-                <p>No tournaments found. Create your first one!</p>
+                <svg className="w-12 h-12 mb-4 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                <p className="font-bold">No active tournaments</p>
+                <p className="text-xs mt-1">Host your first one for 200 credits.</p>
               </div>
             )}
           </div>
@@ -238,11 +256,15 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
 
         <section className="space-y-6">
           <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
-            <h4 className="text-lg font-bold mb-4">Quick Shortcuts</h4>
+            <h4 className="text-lg font-bold mb-4">Admin Shortcuts</h4>
             <div className="space-y-3">
               <button className="w-full text-left p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Rulebook</p>
-                 <p className="font-bold text-slate-800">Tournament Guidelines</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Rulebook</p>
+                 <p className="font-bold text-slate-800">Review Guidelines</p>
+              </button>
+              <button className="w-full text-left p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Logs</p>
+                 <p className="font-bold text-slate-800">Transaction History</p>
               </button>
             </div>
           </div>
@@ -263,24 +285,24 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
               <div className="p-4 bg-blue-50 rounded-2xl flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">₹</div>
                 <div>
-                  <p className="text-xs text-blue-600 font-bold uppercase">Hosting Fee</p>
+                  <p className="text-xs text-blue-600 font-bold uppercase tracking-widest">Hosting Fee</p>
                   <p className="text-sm font-bold">200 Credits required</p>
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Tournament Name</label>
-                <input required type="text" value={newTournament.name} onChange={e => setNewTournament({...newTournament, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none" placeholder="e.g. Smash Masters 2025" />
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Tournament Name</label>
+                <input required type="text" value={newTournament.name} onChange={e => setNewTournament({...newTournament, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 transition-all" placeholder="e.g. Smash Masters 2025" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Format</label>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Format</label>
                   <select value={newTournament.format} onChange={e => setNewTournament({...newTournament, format: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none">
                     <option value="knockout">Knockout</option>
                     <option value="league">League</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-1">Start Date</label>
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Start Date</label>
                   <input required type="datetime-local" onChange={e => setNewTournament({...newTournament, start_date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none" />
                 </div>
               </div>
@@ -301,7 +323,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               </div>
               <h3 className="text-2xl font-bold text-slate-900 mb-2">Buy Credits</h3>
-              <p className="text-slate-500 mb-8">1 Credit = ₹1. Host a tournament for 200 credits.</p>
+              <p className="text-slate-500 mb-8 text-sm">1 Credit = ₹1. Top up to host or join tournaments.</p>
               
               <div className="grid grid-cols-2 gap-3 mb-6">
                 {[200, 500, 1000, 2000].map(amt => (
@@ -320,7 +342,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
                   onClick={handleTopUp}
                   className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95"
                 >
-                  Pay ₹{topUpAmount} via Razorpay
+                  {RAZORPAY_KEY === 'rzp_test_placeholder' ? 'Simulate Payment (₹' + topUpAmount + ')' : 'Pay ₹' + topUpAmount + ' via Razorpay'}
                 </button>
                 <button 
                   onClick={() => setIsTopUpOpen(false)}
