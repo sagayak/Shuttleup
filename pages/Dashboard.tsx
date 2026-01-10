@@ -8,7 +8,6 @@ interface DashboardProps {
   onNavigate: (page: string, params?: any) => void;
 }
 
-// Extend Window interface for Razorpay
 declare global {
   interface Window {
     Razorpay: any;
@@ -46,10 +45,17 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
   const handleTopUp = () => {
     if (!profile) return;
 
+    // Check if Razorpay is loaded
+    if (typeof window.Razorpay === 'undefined') {
+      alert("Razorpay SDK is still loading or blocked. Please refresh the page and try again.");
+      console.error("Razorpay script not found on window object.");
+      return;
+    }
+
     // Razorpay Configuration
-    // NOTE: Replace 'rzp_test_YOUR_KEY_ID' with your actual Razorpay Key ID when available
+    // NOTE: You MUST replace 'rzp_test_placeholder' with a real Razorpay Key ID
     const options = {
-      key: 'rzp_test_S2DiM1kIVHybBI', // Use your actual key here
+      key: 'rzp_test_S2DiM1kIVHybBI', 
       amount: topUpAmount * 100, // Amount in paise
       currency: "INR",
       name: "ShuttleUp",
@@ -68,9 +74,10 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
           
           alert(`Successfully added ₹${topUpAmount} credits!`);
           setIsTopUpOpen(false);
-          // Refresh window to update Navbar credits or trigger profile refetch in parent
-          window.location.reload(); 
+          // Force a small delay then reload to refresh global profile state
+          setTimeout(() => window.location.reload(), 1000);
         } catch (err: any) {
+          console.error("RPC Error:", err);
           alert("Payment verified but credit update failed: " + err.message);
         } finally {
           setLoading(false);
@@ -83,16 +90,23 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
       theme: {
         color: "#2563eb",
       },
+      modal: {
+        ondismiss: function() {
+          console.log('Razorpay modal closed by user');
+        }
+      }
     };
 
     try {
+      console.log("Opening Razorpay for amount:", topUpAmount);
       const rzp = new window.Razorpay(options);
       rzp.on('payment.failed', function (response: any) {
         alert("Payment Failed: " + response.error.description);
       });
       rzp.open();
-    } catch (err) {
-      alert("Razorpay SDK not loaded. Please check your internet connection.");
+    } catch (err: any) {
+      console.error("Razorpay initialization error:", err);
+      alert("Error starting payment: " + err.message);
     }
   };
 
