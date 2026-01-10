@@ -13,6 +13,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [otp, setOtp] = useState('');
   const [cooldown, setCooldown] = useState(0);
+  const [siteUrl, setSiteUrl] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '', 
@@ -21,6 +22,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
   });
 
   useEffect(() => {
+    setSiteUrl(window.location.origin);
     let timer: any;
     if (cooldown > 0) {
       timer = setInterval(() => setCooldown(prev => prev - 1), 1000);
@@ -35,18 +37,19 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
 
     try {
       if (isLogin) {
-        // signInWithOtp sends a 'magiclink' type OTP by default
+        // signInWithOtp triggers the "Magic Link" email template
         const { error } = await supabase.auth.signInWithOtp({
           email: formData.email,
           options: {
             shouldCreateUser: false,
+            // Removing emailRedirectTo for pure OTP flow
           }
         });
         if (error) throw error;
         setShowOtpInput(true);
         setCooldown(60);
       } else {
-        // signUp sends a 'signup' type OTP
+        // signUp triggers the "Confirm Signup" email template
         const { error } = await supabase.auth.signUp({
           email: formData.email,
           password: formData.password || 'TempPass123!', 
@@ -59,8 +62,6 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
         });
         
         if (error) {
-          // If user exists but is unconfirmed, Supabase might throw an error or just resend.
-          // We handle "User already registered" by switching to login or showing OTP if they aren't confirmed.
           if (error.message.includes('already registered')) {
             setErrorMsg("This email is already registered. Please Sign In instead.");
             setLoading(false);
@@ -85,9 +86,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
     setErrorMsg(null);
 
     try {
-      // Important: type must match the template triggered.
-      // signup -> type: 'signup'
-      // signInWithOtp -> type: 'email' (magiclink)
+      // type: 'signup' is for new accounts (Confirm Signup template)
+      // type: 'email' is for existing accounts (Magic Link template)
       const { error, data } = await supabase.auth.verifyOtp({
         email: formData.email,
         token: otp,
@@ -99,10 +99,8 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
       if (data.session) {
         onAuthSuccess();
       } else {
-        // For some flows, verifyOtp might succeed but not return a session immediately
-        // We'll try to sign in normally if password was provided, or wait for auth state change
         setErrorMsg("Verification successful. Redirecting...");
-        setTimeout(() => onAuthSuccess(), 1500);
+        setTimeout(() => onAuthSuccess(), 1000);
       }
     } catch (err: any) {
       setErrorMsg(err.message === 'Token has expired' ? 'Code expired. Please resend.' : err.message);
@@ -136,7 +134,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
       </div>
 
       {/* Form Side */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-white md:bg-slate-50">
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-white md:bg-slate-50">
         <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-2xl md:shadow-xl border border-slate-100 animate-in slide-in-from-bottom-12 duration-700">
           {!showOtpInput ? (
             <>
@@ -237,6 +235,9 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
                 </div>
                 <h2 className="text-3xl font-bold text-slate-900 mb-2">Verify Code</h2>
                 <p className="text-slate-500">Sent to <span className="font-bold text-slate-900">{formData.email}</span></p>
+                <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-2 px-4 py-1 bg-blue-50 rounded-full inline-block">
+                  {isLogin ? 'Login Template' : 'Signup Template'}
+                </p>
               </div>
 
               {errorMsg && (
@@ -279,6 +280,21 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
               </div>
             </div>
           )}
+        </div>
+
+        {/* Setup Instruction Helper */}
+        <div className="mt-8 w-full max-w-md bg-amber-50 border border-amber-100 rounded-2xl p-6 shadow-sm">
+           <div className="flex gap-4">
+              <div className="w-10 h-10 bg-amber-100 rounded-xl flex flex-shrink-0 items-center justify-center text-amber-600 font-bold text-xl">!</div>
+              <div>
+                <h4 className="font-bold text-amber-900 text-sm">Critical Supabase Setting</h4>
+                <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+                  To remove the <strong>"Follow this link"</strong> text, you must edit <strong>BOTH</strong> "Confirm Signup" and "Magic Link" templates in your Supabase dashboard. 
+                  Make sure to clear the <strong>HTML version</strong> entirely and just put: <br/>
+                  <code className="bg-white/50 px-1 rounded font-bold">Your code is &#123;&#123; .Token &#125;&#125;</code>
+                </p>
+              </div>
+           </div>
         </div>
       </div>
     </div>
