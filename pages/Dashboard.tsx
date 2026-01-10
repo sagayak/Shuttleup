@@ -29,7 +29,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
   });
 
   // Constants
-  const RAZORPAY_KEY = 'rzp_test_placeholder'; // REPLACE THIS WITH YOUR REAL KEY
+  const RAZORPAY_KEY = 'rzp_test_S2DiM1kIVHybBI'; // REPLACE THIS WITH YOUR REAL KEY
 
   useEffect(() => {
     fetchTournaments();
@@ -74,7 +74,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
     if (!profile) return;
 
     // Simulation Mode for development if key is placeholder
-    if (RAZORPAY_KEY === 'rzp_test_S2DiM1kIVHybBI') {
+    if (RAZORPAY_KEY === 'rzp_test_placeholder') {
       const confirmSim = window.confirm("You are using a placeholder Razorpay Key. Would you like to SIMULATE a successful payment to test the credit system?");
       if (confirmSim) {
         finalizePayment(`SIM_PAY_${Date.now()}`);
