@@ -12,7 +12,6 @@ const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
   const [isPinVerified, setIsPinVerified] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [currentPage, setCurrentPage] = useState<{ name: string; params?: any }>({ name: 'dashboard' });
@@ -20,30 +19,22 @@ const App: React.FC = () => {
   const SUPER_PIN = "31218";
 
   useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const errorDescription = hashParams.get('error_description');
-    if (errorDescription) {
-      setAuthError(decodeURIComponent(errorDescription.replace(/\+/g, ' ')));
-      window.history.replaceState(null, '', window.location.pathname);
-    }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else {
+      if (session) {
+        fetchProfile(session.user.id);
+      } else {
         setProfile(null);
         setIsPinVerified(false);
         setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchProfile(session.user.id);
+      else setLoading(false);
+    });
   }, []);
 
   const fetchProfile = async (userId: string) => {
@@ -57,7 +48,6 @@ const App: React.FC = () => {
       if (error) throw error;
       setProfile(data);
       
-      // If not a superadmin, they are "verified" by default
       if (data.role !== 'superadmin') {
         setIsPinVerified(true);
       }
@@ -138,23 +128,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {authError && (
-        <div className="fixed top-4 left-4 right-4 z-[100] animate-in slide-in-from-top-4 duration-300">
-          <div className="bg-red-600 text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-              <div>
-                <p className="font-bold">Authentication Failed</p>
-                <p className="text-sm opacity-90">{authError}</p>
-              </div>
-            </div>
-            <button onClick={() => setAuthError(null)} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-          </div>
-        </div>
-      )}
-
       <Navbar profile={profile} onNavigate={navigateTo} />
       
       <main className="flex-grow container mx-auto px-4 py-8 pb-24 md:pb-8">
