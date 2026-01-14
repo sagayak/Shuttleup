@@ -82,13 +82,9 @@ const App: React.FC = () => {
       });
 
       if (error) throw error;
-      
-      // If successful, wait and retry fetch
-      setTimeout(() => {
-        fetchProfile(session.user.id);
-      }, 500);
+      fetchProfile(session.user.id);
     } catch (err: any) {
-      alert("Manual creation failed: " + err.message + "\n\nCRITICAL: You must run the SQL in schema.txt first!");
+      alert("Manual creation failed: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -109,106 +105,52 @@ const App: React.FC = () => {
     window.scrollTo(0, 0);
   };
 
-  if (loading) {
+  if (loading && !profile) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-white">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
-          <p className="text-slate-400 font-medium text-sm animate-pulse">Syncing with ShuttleUp Cloud...</p>
+          <p className="text-slate-400 font-medium text-sm animate-pulse">Syncing ShuttleUp...</p>
         </div>
       </div>
     );
   }
 
-  // Auth Guard
   if (!session) {
     return <AuthPage onAuthSuccess={() => navigateTo('dashboard')} />;
   }
 
-  // Profile Missing Guard (Diagnostic Screen)
   if (profileError) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-3xl p-10 shadow-2xl border border-red-100 text-center">
-          <div className="w-20 h-20 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Setup Required</h2>
-          <p className="text-slate-500 mb-6 text-sm">
-            You are logged in, but we couldn't find your profile in the <code>profiles</code> table.
-          </p>
-          
-          <div className="space-y-3 mb-8">
-            <button 
-              onClick={createMissingProfile}
-              className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition-all"
-            >
-              Step 1: Create Profile (Sync)
-            </button>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Or</p>
-            <button 
-              onClick={() => window.location.reload()}
-              className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
-            >
-              Step 2: Check Again
-            </button>
-          </div>
-
-          <div className="bg-amber-50 p-4 rounded-xl text-left border border-amber-100 mb-6">
-            <h4 className="text-xs font-bold text-amber-700 uppercase mb-2">Developer Checklist:</h4>
-            <ul className="text-[11px] text-amber-600 space-y-1 font-medium list-disc ml-4">
-                <li>Run ALL SQL from <code>schema.txt</code> in Supabase SQL Editor</li>
-                <li>Verify <code>profiles</code> table exists in Table Editor</li>
-                <li>Sign up with a REAL email or disable "Email Confirmation" in Auth Settings</li>
-            </ul>
-          </div>
-          
-          <button 
-            onClick={() => supabase.auth.signOut()}
-            className="text-slate-400 text-xs hover:text-red-500 font-bold"
-          >
-            Sign Out & Try Again
+        <div className="max-w-md w-full bg-white rounded-3xl p-10 shadow-2xl text-center">
+          <h2 className="text-2xl font-bold mb-4">Profile Sync Required</h2>
+          <button onClick={createMissingProfile} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold mb-4">
+            Initialize Profile
           </button>
+          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 text-xs">Logout</button>
         </div>
       </div>
     );
   }
 
-  // SuperAdmin PIN Guard
   if (profile?.role === 'superadmin' && !isPinVerified) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-white rounded-3xl p-10 shadow-2xl text-center animate-in zoom-in duration-300">
-          <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 rotate-12">
-            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 00-2 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">SuperAdmin Access</h2>
-          <p className="text-slate-500 mb-8 text-sm">This account requires a security PIN to proceed.</p>
-          
+        <div className="w-full max-w-sm bg-white rounded-3xl p-10 shadow-2xl text-center">
+          <h2 className="text-2xl font-bold mb-8">SuperAdmin PIN</h2>
           <form onSubmit={handlePinSubmit} className="space-y-4">
             <input 
               autoFocus
               type="password"
-              placeholder="Enter 5-digit PIN"
+              placeholder="•••••"
               value={pinInput}
               onChange={(e) => setPinInput(e.target.value)}
-              className="w-full text-center text-3xl tracking-[1em] font-bold py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-blue-500 focus:ring-0 outline-none transition-all"
+              className="w-full text-center text-3xl tracking-[1em] font-bold py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none"
               maxLength={5}
             />
-            <button 
-              type="submit"
-              className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition-all"
-            >
-              Verify PIN
-            </button>
+            <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">Verify</button>
           </form>
-          
-          <button 
-            onClick={() => supabase.auth.signOut()}
-            className="mt-6 text-slate-400 text-sm font-medium hover:text-slate-600"
-          >
-            Logout and switch account
-          </button>
         </div>
       </div>
     );
@@ -217,10 +159,13 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Navbar profile={profile} onNavigate={navigateTo} />
-      
       <main className="flex-grow container mx-auto px-4 py-8 pb-24 md:pb-8">
         {currentPage.name === 'dashboard' && (
-          <Dashboard profile={profile} onNavigate={navigateTo} />
+          <Dashboard 
+            profile={profile} 
+            onNavigate={navigateTo} 
+            onRefreshProfile={() => fetchProfile(session.user.id)} 
+          />
         )}
         {currentPage.name === 'tournament' && (
           <TournamentView 
@@ -236,22 +181,6 @@ const App: React.FC = () => {
           />
         )}
       </main>
-
-      {/* Mobile Sticky Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-6 py-3 flex justify-around items-center z-50">
-        <button onClick={() => navigateTo('dashboard')} className="flex flex-col items-center">
-          <svg className={`w-6 h-6 ${currentPage.name === 'dashboard' ? 'text-blue-600' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-          <span className={`text-[10px] mt-1 font-bold ${currentPage.name === 'dashboard' ? 'text-blue-600' : 'text-slate-400'}`}>HOME</span>
-        </button>
-        <button className="flex flex-col items-center">
-          <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-          <span className="text-[10px] mt-1 font-bold text-slate-400">TOURNAMENTS</span>
-        </button>
-        <button className="flex flex-col items-center">
-          <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-          <span className="text-[10px] mt-1 font-bold text-slate-400">PROFILE</span>
-        </button>
-      </div>
     </div>
   );
 };
