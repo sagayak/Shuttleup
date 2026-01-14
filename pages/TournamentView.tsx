@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Tournament, Team, Match, Profile } from '../types';
+import { Tournament, Team, Match, Profile, TeamMember } from '../types';
 import { supabase } from '../supabaseClient';
 
 interface TournamentViewProps {
@@ -12,11 +12,18 @@ interface TournamentViewProps {
 const TournamentView: React.FC<TournamentViewProps> = ({ tournamentId, profile, onNavigate }) => {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [teamMembers, setTeamMembers] = useState<Record<string, TeamMember[]>>({});
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'info' | 'teams' | 'matches' | 'standings'>('info');
   const [isAddingTeam, setIsAddingTeam] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
+  
+  // Member management state
+  const [isMemberModalOpen, setIsMemberModalOpen] = useState<string | null>(null);
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Profile[]>([]);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     fetchTournamentData();
@@ -29,8 +36,17 @@ const TournamentView: React.FC<TournamentViewProps> = ({ tournamentId, profile, 
       })
       .subscribe();
 
+    // Real-time subscription for team members
+    const memberChannel = supabase
+      .channel(`members-${tournamentId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => {
+        fetchTeamMembers();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(matchChannel);
+      supabase.removeChannel(memberChannel);
     };
   }, [tournamentId]);
 
@@ -39,13 +55,37 @@ const TournamentView: React.FC<TournamentViewProps> = ({ tournamentId, profile, 
     const { data: tData } = await supabase.from('tournaments').select('*').eq('id', tournamentId).single();
     if (tData) setTournament(tData);
     
-    await Promise.all([fetchTeams(), fetchMatches()]);
+    await Promise.all([fetchTeams(), fetchMatches(), fetchTeamMembers()]);
     setLoading(false);
   };
 
   const fetchTeams = async () => {
     const { data } = await supabase.from('teams').select('*').eq('tournament_id', tournamentId);
     if (data) setTeams(data);
+  };
+
+  const fetchTeamMembers = async () => {
+    const { data, error } = await supabase
+      .from('team_members')
+      .select('*, profile:profiles(*)')
+      .in('team_id', teams.map(t => t.id).length > 0 ? teams.map(t => t.id) : [tournamentId]); // Fallback check
+    
+    // Better query if teams are already loaded
+    const { data: directData } = await supabase
+      .from('team_members')
+      .select('*, profile:profiles(*)')
+      .filter('team_id', 'in', `(${teams.map(t => t.id).join(',')})`);
+
+    const finalData = directData || data;
+
+    if (finalData) {
+      const grouped = (finalData as any[]).reduce((acc: any, curr) => {
+        if (!acc[curr.team_id]) acc[curr.team_id] = [];
+        acc[curr.team_id].push(curr);
+        return acc;
+      }, {});
+      setTeamMembers(grouped);
+    }
   };
 
   const fetchMatches = async () => {
@@ -71,6 +111,43 @@ const TournamentView: React.FC<TournamentViewProps> = ({ tournamentId, profile, 
     }
   };
 
+  const searchPlayers = async () => {
+    if (memberSearchQuery.length < 2) return;
+    setSearching(true);
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .or(`username.ilike.%${memberSearchQuery}%,full_name.ilike.%${memberSearchQuery}%,user_numeric_id.eq.${parseInt(memberSearchQuery) || 0}`)
+      .limit(5);
+    
+    if (data) setSearchResults(data);
+    setSearching(false);
+  };
+
+  const handleAddMember = async (teamId: string, profileId: string) => {
+    const { error } = await supabase.from('team_members').insert([{
+      team_id: teamId,
+      profile_id: profileId
+    }]);
+
+    if (error) {
+      if (error.code === '23505') alert("Player is already in this team.");
+      else alert(error.message);
+    } else {
+      setIsMemberModalOpen(null);
+      setMemberSearchQuery('');
+      setSearchResults([]);
+      fetchTeamMembers();
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!window.confirm("Remove this player from the team?")) return;
+    const { error } = await supabase.from('team_members').delete().eq('id', memberId);
+    if (error) alert(error.message);
+    else fetchTeamMembers();
+  };
+
   const handleGenerateMatch = async () => {
     if (teams.length < 2) {
       alert("Need at least 2 teams to generate a match.");
@@ -91,7 +168,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({ tournamentId, profile, 
   };
 
   const handleLock = async () => {
-    if (!window.confirm("Are you sure? Locking is irreversible and will prevent further team/member changes.")) return;
+    if (!window.confirm("Are you sure? Locking is irreversible and will prevent further roster changes.")) return;
     const { error } = await supabase.from('tournaments').update({ is_locked: true }).eq('id', tournamentId);
     if (error) alert(error.message);
     else fetchTournamentData();
@@ -120,7 +197,7 @@ const TournamentView: React.FC<TournamentViewProps> = ({ tournamentId, profile, 
               <h1 className="text-3xl font-bold text-slate-900">{tournament.name}</h1>
               {tournament.is_locked && (
                 <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase flex items-center gap-1">
-                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg> 
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg> 
                   Locked
                 </span>
               )}
@@ -245,16 +322,63 @@ const TournamentView: React.FC<TournamentViewProps> = ({ tournamentId, profile, 
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {teams.length > 0 ? teams.map(t => (
-                <div key={t.id} className="aspect-square bg-white rounded-2xl border border-slate-100 flex flex-col items-center justify-center p-4 text-center shadow-sm hover:shadow-md transition-shadow group">
-                  <div className="w-12 h-12 bg-slate-50 rounded-full mb-3 flex items-center justify-center text-slate-300 font-bold group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                    {t.name.charAt(0)}
+                <div key={t.id} className="bg-white rounded-3xl border border-slate-100 flex flex-col overflow-hidden shadow-sm hover:shadow-md transition-all">
+                  <div className="p-5 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold">
+                        {t.name.charAt(0)}
+                      </div>
+                      <p className="font-bold text-slate-800">{t.name}</p>
+                    </div>
+                    {isOrganizer && !tournament.is_locked && (
+                      <button 
+                        onClick={() => setIsMemberModalOpen(t.id)}
+                        className="text-blue-600 hover:text-blue-700 font-bold text-xs flex items-center gap-1"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        Add Player
+                      </button>
+                    )}
                   </div>
-                  <p className="font-bold text-slate-800 text-sm truncate w-full">{t.name}</p>
+                  
+                  <div className="p-4 flex-grow min-h-[120px] space-y-2">
+                    {teamMembers[t.id]?.length > 0 ? (
+                      teamMembers[t.id].map(m => (
+                        <div key={m.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl">
+                          <div className="flex items-center gap-3">
+                            <div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold text-slate-500">
+                              {m.profile?.full_name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{m.profile?.full_name}</p>
+                              <p className="text-[10px] text-slate-400 font-mono">#{m.profile?.user_numeric_id}</p>
+                            </div>
+                          </div>
+                          {isOrganizer && !tournament.is_locked && (
+                            <button 
+                              onClick={() => handleRemoveMember(m.id)}
+                              className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300 py-8">
+                        <svg className="w-8 h-8 mb-2 opacity-20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                        <p className="text-xs font-medium">No players yet</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )) : (
-                <div className="col-span-full py-10 text-center text-slate-400 italic">No teams registered yet.</div>
+                <div className="col-span-full py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400">
+                   <p className="font-medium italic">No teams registered in this tournament.</p>
+                </div>
               )}
             </div>
           </div>
@@ -295,6 +419,71 @@ const TournamentView: React.FC<TournamentViewProps> = ({ tournamentId, profile, 
           </div>
         )}
       </div>
+
+      {/* Member Selection Modal */}
+      {isMemberModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-lg font-bold">Add Player to Roster</h3>
+              <button onClick={() => { setIsMemberModalOpen(null); setMemberSearchQuery(''); setSearchResults([]); }} className="text-slate-400">✕</button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Search by ID or Username</label>
+                <div className="relative">
+                  <input 
+                    autoFocus
+                    type="text" 
+                    placeholder="e.g. 5001 or john_doe"
+                    value={memberSearchQuery}
+                    onChange={(e) => setMemberSearchQuery(e.target.value)}
+                    onKeyUp={(e) => e.key === 'Enter' && searchPlayers()}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  />
+                  <button 
+                    onClick={searchPlayers}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-600 font-bold text-sm"
+                  >
+                    Find
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {searching ? (
+                  <div className="py-8 text-center text-slate-400 text-sm italic">Searching database...</div>
+                ) : searchResults.length > 0 ? (
+                  searchResults.map(user => (
+                    <button 
+                      key={user.id}
+                      onClick={() => handleAddMember(isMemberModalOpen, user.id)}
+                      className="w-full flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-transparent hover:border-blue-200 hover:bg-blue-50 transition-all group"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-bold text-blue-600 shadow-sm">
+                          {user.full_name.charAt(0)}
+                        </div>
+                        <div className="text-left">
+                          <p className="font-bold text-slate-800 group-hover:text-blue-700">{user.full_name}</p>
+                          <p className="text-xs text-slate-400 font-mono tracking-tighter">@{user.username} • #{user.user_numeric_id}</p>
+                        </div>
+                      </div>
+                      <div className="w-8 h-8 rounded-full border border-blue-200 flex items-center justify-center text-blue-600 bg-white opacity-0 group-hover:opacity-100 transition-opacity">
+                        +
+                      </div>
+                    </button>
+                  ))
+                ) : memberSearchQuery ? (
+                  <div className="py-8 text-center text-slate-400 text-sm">No players found matching "{memberSearchQuery}"</div>
+                ) : (
+                  <div className="py-8 text-center text-slate-400 text-sm">Enter a name or numeric ID to start.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

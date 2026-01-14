@@ -29,7 +29,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
   });
 
   // Constants
-  const RAZORPAY_KEY = 'rzp_test_S2DiM1kIVHybBI'; // REPLACE THIS WITH YOUR REAL KEY
+  const RAZORPAY_KEY = 'rzp_test_placeholder'; // REPLACE THIS WITH YOUR REAL KEY
 
   useEffect(() => {
     fetchTournaments();

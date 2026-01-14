@@ -42,6 +42,15 @@ CREATE TABLE IF NOT EXISTS public.teams (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- TEAM MEMBERS TABLE
+CREATE TABLE IF NOT EXISTS public.team_members (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    team_id UUID REFERENCES public.teams(id) ON DELETE CASCADE NOT NULL,
+    profile_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(team_id, profile_id)
+);
+
 -- MATCHES TABLE
 CREATE TABLE IF NOT EXISTS public.matches (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -75,6 +84,7 @@ CREATE TABLE IF NOT EXISTS public.credit_transactions (
 
 -- Set Serial Start
 ALTER SEQUENCE IF EXISTS tournaments_tournament_numeric_id_seq RESTART WITH 1000;
+ALTER SEQUENCE IF EXISTS profiles_user_numeric_id_seq RESTART WITH 5000;
 
 -- RLS POLICIES
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -89,6 +99,18 @@ CREATE POLICY "Organizers can update own tournaments" ON public.tournaments FOR 
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Teams viewable by everyone" ON public.teams FOR SELECT USING (true);
 CREATE POLICY "Organizers can manage teams" ON public.teams FOR ALL USING (EXISTS (SELECT 1 FROM public.tournaments WHERE id = tournament_id AND organizer_id = auth.uid() AND is_locked = FALSE));
+
+ALTER TABLE public.team_members ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Team members are viewable by everyone" ON public.team_members FOR SELECT USING (true);
+CREATE POLICY "Organizers can manage team members" ON public.team_members FOR ALL USING (
+    EXISTS (
+        SELECT 1 FROM public.teams 
+        JOIN public.tournaments ON teams.tournament_id = tournaments.id 
+        WHERE teams.id = team_members.team_id 
+        AND tournaments.organizer_id = auth.uid() 
+        AND tournaments.is_locked = FALSE
+    )
+);
 
 ALTER TABLE public.matches ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Matches viewable by everyone" ON public.matches FOR SELECT USING (true);
@@ -133,6 +155,17 @@ BEGIN
     UPDATE public.profiles SET credits = credits - cost WHERE id = user_uuid;
     INSERT INTO public.credit_transactions (profile_id, amount, type, description)
     VALUES (user_uuid, -cost, 'deduction', 'Tournament hosting fee');
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Safe Top-up RPC
+CREATE OR REPLACE FUNCTION public.add_credits_after_payment(user_uuid UUID, topup_amount INTEGER, payment_id TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE public.profiles SET credits = credits + topup_amount WHERE id = user_uuid;
+    INSERT INTO public.credit_transactions (profile_id, amount, type, description, razorpay_payment_id)
+    VALUES (user_uuid, topup_amount, 'purchase', 'Credit Top-up via Razorpay', payment_id);
     RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

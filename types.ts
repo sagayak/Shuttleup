@@ -37,6 +37,14 @@ export interface Team {
   created_at: string;
 }
 
+export interface TeamMember {
+  id: string;
+  team_id: string;
+  profile_id: string;
+  profile?: Profile;
+  created_at: string;
+}
+
 export interface Match {
   id: string;
   tournament_id: string;
