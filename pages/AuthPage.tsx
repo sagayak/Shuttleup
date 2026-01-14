@@ -45,7 +45,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
           }
         });
         if (error) throw error;
-        setSuccessMsg("Account created! You can now sign in with your password.");
+        setSuccessMsg("Account created! If email confirmation is enabled on your project, please check your inbox before logging in.");
         setMode('login');
       }
     } catch (err: any) {

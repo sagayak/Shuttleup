@@ -12,6 +12,7 @@ const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState(false);
   const [isPinVerified, setIsPinVerified] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [currentPage, setCurrentPage] = useState<{ name: string; params?: any }>({ name: 'dashboard' });
@@ -27,6 +28,7 @@ const App: React.FC = () => {
         setProfile(null);
         setIsPinVerified(false);
         setLoading(false);
+        setProfileError(false);
       }
     });
 
@@ -39,20 +41,50 @@ const App: React.FC = () => {
 
   const fetchProfile = async (userId: string) => {
     try {
+      setLoading(true);
+      setProfileError(false);
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
       
-      if (error) throw error;
-      setProfile(data);
+      if (error) {
+        if (error.code === 'PGRST116') { // Record not found
+          console.warn('Profile record missing in database.');
+          setProfileError(true);
+        }
+        throw error;
+      }
       
+      setProfile(data);
       if (data.role !== 'superadmin') {
         setIsPinVerified(true);
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createMissingProfile = async () => {
+    if (!session?.user) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('profiles').insert({
+        id: session.user.id,
+        full_name: session.user.user_metadata?.full_name || 'New Player',
+        username: session.user.user_metadata?.username || `user_${session.user.id.substring(0, 8)}`,
+        email: session.user.email,
+        role: 'player',
+        credits: 0
+      });
+
+      if (error) throw error;
+      window.location.reload(); // Refresh to fetch newly created profile
+    } catch (err: any) {
+      alert("Manual creation failed: " + err.message + "\n\nPlease ensure you have run the schema.txt SQL in your Supabase dashboard.");
     } finally {
       setLoading(false);
     }
@@ -76,7 +108,10 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+          <p className="text-slate-400 font-medium text-sm animate-pulse">Syncing with ShuttleUp Cloud...</p>
+        </div>
       </div>
     );
   }
@@ -84,6 +119,48 @@ const App: React.FC = () => {
   // Auth Guard
   if (!session) {
     return <AuthPage onAuthSuccess={() => navigateTo('dashboard')} />;
+  }
+
+  // Profile Missing Guard (Diagnostic Screen)
+  if (profileError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl p-10 shadow-2xl border border-red-100 text-center">
+          <div className="w-20 h-20 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Profile Missing</h2>
+          <p className="text-slate-500 mb-6 text-sm">
+            You are logged in via Auth, but your <strong>Profile record</strong> is missing. 
+            This happens if you signed up before the database schema was applied.
+          </p>
+          
+          <div className="space-y-3 mb-8">
+            <button 
+              onClick={createMissingProfile}
+              className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition-all"
+            >
+              Manual Sync (Fix it for me)
+            </button>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
+            >
+              Check Again
+            </button>
+          </div>
+
+          <p className="text-slate-400 text-xs mb-4">Or manually run this SQL for User ID: <code className="bg-slate-100 p-1 rounded font-mono text-[10px] select-all">{session.user.id}</code></p>
+          
+          <button 
+            onClick={() => supabase.auth.signOut()}
+            className="text-slate-400 text-xs hover:text-red-500 font-bold"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // SuperAdmin PIN Guard
