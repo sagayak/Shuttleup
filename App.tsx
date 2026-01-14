@@ -20,23 +20,36 @@ const App: React.FC = () => {
   const SUPER_PIN = "31218";
 
   useEffect(() => {
-    supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      if (session) {
-        fetchProfile(session.user.id);
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      console.log("Auth Event:", _event);
+      setSession(newSession);
+      if (newSession) {
+        await fetchProfile(newSession.user.id);
       } else {
         setProfile(null);
         setIsPinVerified(false);
-        setLoading(false);
         setProfileError(false);
+        setLoading(false);
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else setLoading(false);
-    });
+    // Initial session check
+    const checkSession = async () => {
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      setSession(initialSession);
+      if (initialSession) {
+        await fetchProfile(initialSession.user.id);
+      } else {
+        setLoading(false);
+      }
+    };
+
+    checkSession();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchProfile = async (userId: string) => {
@@ -82,7 +95,7 @@ const App: React.FC = () => {
       });
 
       if (error) throw error;
-      fetchProfile(session.user.id);
+      await fetchProfile(session.user.id);
     } catch (err: any) {
       alert("Manual creation failed: " + err.message);
     } finally {
@@ -105,35 +118,40 @@ const App: React.FC = () => {
     window.scrollTo(0, 0);
   };
 
-  if (loading && !profile) {
+  // 1. Loading state when we have a session but no profile yet
+  if (loading && !profile && session) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-white">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
-          <p className="text-slate-400 font-medium text-sm animate-pulse">Syncing ShuttleUp...</p>
+          <p className="text-slate-400 font-medium text-sm animate-pulse">Loading Profile...</p>
         </div>
       </div>
     );
   }
 
+  // 2. Auth state
   if (!session) {
     return <AuthPage onAuthSuccess={() => navigateTo('dashboard')} />;
   }
 
+  // 3. Error state
   if (profileError) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-white rounded-3xl p-10 shadow-2xl text-center">
           <h2 className="text-2xl font-bold mb-4">Profile Sync Required</h2>
-          <button onClick={createMissingProfile} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold mb-4">
+          <p className="text-slate-500 mb-6 text-sm">We couldn't find your profile record. Click initialize to create one.</p>
+          <button onClick={createMissingProfile} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold mb-4 shadow-lg shadow-blue-100">
             Initialize Profile
           </button>
-          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 text-xs">Logout</button>
+          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 text-xs hover:text-red-500">Logout</button>
         </div>
       </div>
     );
   }
 
+  // 4. SuperAdmin check
   if (profile?.role === 'superadmin' && !isPinVerified) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
@@ -152,6 +170,15 @@ const App: React.FC = () => {
             <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">Verify</button>
           </form>
         </div>
+      </div>
+    );
+  }
+
+  // Final fallback: Still loading
+  if (!profile) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-white">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
       </div>
     );
   }

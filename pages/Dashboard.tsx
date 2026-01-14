@@ -39,15 +39,18 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate, onRefreshPro
   };
 
   const finalizeCreditAddition = async (amount: number) => {
+    console.log("Attempting to add credits. Current profile:", profile);
+    
     if (!profile) {
-      alert("Error: No profile loaded.");
+      console.error("Credit addition failed: Profile is null in Dashboard props.");
+      alert("Error: Profile not loaded. Please refresh the page.");
       return;
     }
 
     setLoading(true);
     const mockPaymentId = `DEV_INSTANT_${Date.now()}`;
     
-    console.log(`💎 Instantly adding ${amount} credits for user ${profile.id}`);
+    console.log(`💎 RPC CALL: add_credits_after_payment | User: ${profile.id} | Amount: ${amount}`);
 
     try {
       const { data, error } = await supabase.rpc('add_credits_after_payment', {
@@ -57,14 +60,20 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate, onRefreshPro
       });
 
       if (error) {
-        console.error("RPC Error:", error);
+        console.error("RPC Error Details:", error);
         throw new Error(error.message);
       }
       
-      console.log("✅ Credits added successfully.");
-      onRefreshProfile(); // Immediate UI update
-      setIsTopUpOpen(false);
+      console.log("✅ Credits added successfully in DB:", data);
+      
+      // Give the DB a microsecond to settle before refreshing
+      setTimeout(() => {
+        onRefreshProfile(); 
+        setIsTopUpOpen(false);
+      }, 300);
+
     } catch (err: any) {
+      console.error("Credit Addition Exception:", err);
       alert(`Failed to add credits: ${err.message}`);
     } finally {
       setLoading(false);
@@ -155,7 +164,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate, onRefreshPro
               disabled={loading}
               className="flex-1 py-3 bg-blue-600 rounded-xl text-xs font-bold text-white hover:bg-blue-700 transition-all active:scale-95 shadow-md shadow-blue-100 disabled:opacity-50"
             >
-              + Add 200 Instantly
+              {loading ? 'Adding...' : '+ Add 200 Credits'}
             </button>
             <button 
               onClick={() => setIsTopUpOpen(true)}
@@ -196,8 +205,9 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate, onRefreshPro
               </div>
             ))
           ) : (
-            <div className="col-span-full py-20 bg-white rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400">
-              <p className="font-bold">No active tournaments</p>
+            <div className="col-span-full py-20 bg-white rounded-2xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 text-center">
+               <p className="font-bold">No active tournaments</p>
+               <p className="text-sm">Host your own by clicking 'Host New'</p>
             </div>
           )}
         </div>
@@ -209,7 +219,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate, onRefreshPro
           <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in duration-200">
             <div className="bg-slate-50 p-6 border-b border-slate-100 flex justify-between items-center">
               <h3 className="text-xl font-bold">Host New Tournament</h3>
-              <button onClick={() => setIsCreating(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => setIsCreating(false)} className="text-slate-400 hover:text-slate-600 p-2">✕</button>
             </div>
             <form onSubmit={handleCreateTournament} className="p-6 space-y-4">
               <div className="p-4 bg-blue-50 rounded-2xl flex items-center gap-3 mb-4 border border-blue-100">
@@ -219,15 +229,15 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate, onRefreshPro
                   <p className="text-sm font-bold">200 Credits required</p>
                 </div>
               </div>
-              <input required type="text" value={newTournament.name} onChange={e => setNewTournament({...newTournament, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3" placeholder="Tournament Name" />
+              <input required type="text" value={newTournament.name} onChange={e => setNewTournament({...newTournament, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Tournament Name" />
               <div className="grid grid-cols-2 gap-4">
-                <select value={newTournament.format} onChange={e => setNewTournament({...newTournament, format: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                <select value={newTournament.format} onChange={e => setNewTournament({...newTournament, format: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none">
                   <option value="knockout">Knockout</option>
                   <option value="league">League</option>
                 </select>
-                <input required type="datetime-local" onChange={e => setNewTournament({...newTournament, start_date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3" />
+                <input required type="datetime-local" onChange={e => setNewTournament({...newTournament, start_date: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none" />
               </div>
-              <button disabled={loading} type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-xl">
+              <button disabled={loading} type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-xl hover:bg-blue-700 active:scale-95 transition-all">
                 {loading ? 'Processing...' : 'Confirm & Host (200 Credits)'}
               </button>
             </form>
