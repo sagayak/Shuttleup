@@ -34,7 +34,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
         onAuthSuccess();
       } 
       else {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email: formData.email,
           password: formData.password,
           options: {
@@ -45,8 +45,14 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
           }
         });
         if (error) throw error;
-        setSuccessMsg("Account created! If email confirmation is enabled on your project, please check your inbox before logging in.");
-        setMode('login');
+        
+        // Check if user is already "sessioned" (happens if email confirm is OFF)
+        if (data.session) {
+          onAuthSuccess();
+        } else {
+          setSuccessMsg("Account created! PLEASE CHECK YOUR EMAIL to confirm your account before logging in. (Tip: You can disable this in Supabase -> Auth -> Settings)");
+          setMode('login');
+        }
       }
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -92,14 +98,17 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
           </div>
 
           {errorMsg && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-sm font-medium animate-in fade-in zoom-in duration-200">
+            <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-sm font-medium">
               {errorMsg}
             </div>
           )}
 
           {successMsg && (
-            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-2xl text-sm font-medium animate-in fade-in zoom-in duration-200">
-              {successMsg}
+            <div className="mb-6 p-6 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-2xl text-sm font-bold">
+              <div className="flex items-start gap-3">
+                <svg className="w-5 h-5 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                {successMsg}
+              </div>
             </div>
           )}
 

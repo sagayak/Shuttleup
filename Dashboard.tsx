@@ -29,7 +29,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
   });
 
   // Updated logic: Check if key is the placeholder OR if it's explicitly for testing
-  const RAZORPAY_KEY = 'rzp_test_S2DiM1kIVHybBI'; 
+  const RAZORPAY_KEY = 'rzp_test_placeholder'; 
   const isSimulationMode = RAZORPAY_KEY.includes('placeholder') || RAZORPAY_KEY.startsWith('rzp_test');
 
   useEffect(() => {

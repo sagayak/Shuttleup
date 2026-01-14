@@ -50,7 +50,7 @@ const App: React.FC = () => {
         .single();
       
       if (error) {
-        if (error.code === 'PGRST116') { // Record not found
+        if (error.code === 'PGRST116' || error.message.includes('not found')) { 
           console.warn('Profile record missing in database.');
           setProfileError(true);
         }
@@ -82,9 +82,13 @@ const App: React.FC = () => {
       });
 
       if (error) throw error;
-      window.location.reload(); // Refresh to fetch newly created profile
+      
+      // If successful, wait and retry fetch
+      setTimeout(() => {
+        fetchProfile(session.user.id);
+      }, 500);
     } catch (err: any) {
-      alert("Manual creation failed: " + err.message + "\n\nPlease ensure you have run the schema.txt SQL in your Supabase dashboard.");
+      alert("Manual creation failed: " + err.message + "\n\nCRITICAL: You must run the SQL in schema.txt first!");
     } finally {
       setLoading(false);
     }
@@ -129,10 +133,9 @@ const App: React.FC = () => {
           <div className="w-20 h-20 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Profile Missing</h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Setup Required</h2>
           <p className="text-slate-500 mb-6 text-sm">
-            You are logged in via Auth, but your <strong>Profile record</strong> is missing. 
-            This happens if you signed up before the database schema was applied.
+            You are logged in, but we couldn't find your profile in the <code>profiles</code> table.
           </p>
           
           <div className="space-y-3 mb-8">
@@ -140,23 +143,31 @@ const App: React.FC = () => {
               onClick={createMissingProfile}
               className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition-all"
             >
-              Manual Sync (Fix it for me)
+              Step 1: Create Profile (Sync)
             </button>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Or</p>
             <button 
               onClick={() => window.location.reload()}
               className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
             >
-              Check Again
+              Step 2: Check Again
             </button>
           </div>
 
-          <p className="text-slate-400 text-xs mb-4">Or manually run this SQL for User ID: <code className="bg-slate-100 p-1 rounded font-mono text-[10px] select-all">{session.user.id}</code></p>
+          <div className="bg-amber-50 p-4 rounded-xl text-left border border-amber-100 mb-6">
+            <h4 className="text-xs font-bold text-amber-700 uppercase mb-2">Developer Checklist:</h4>
+            <ul className="text-[11px] text-amber-600 space-y-1 font-medium list-disc ml-4">
+                <li>Run ALL SQL from <code>schema.txt</code> in Supabase SQL Editor</li>
+                <li>Verify <code>profiles</code> table exists in Table Editor</li>
+                <li>Sign up with a REAL email or disable "Email Confirmation" in Auth Settings</li>
+            </ul>
+          </div>
           
           <button 
             onClick={() => supabase.auth.signOut()}
             className="text-slate-400 text-xs hover:text-red-500 font-bold"
           >
-            Sign Out
+            Sign Out & Try Again
           </button>
         </div>
       </div>

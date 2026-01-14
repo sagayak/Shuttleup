@@ -1,8 +1,6 @@
 
 -- ==========================================================
 -- SHUTTLEUP DATABASE SCHEMA (IDEMPOTENT)
--- Copy and paste this into the Supabase SQL Editor
--- Link: https://supabase.com/dashboard/project/_/sql
 -- ==========================================================
 
 -- Enable extensions
@@ -92,7 +90,7 @@ CREATE TABLE IF NOT EXISTS public.credit_transactions (
 ALTER SEQUENCE IF EXISTS tournaments_tournament_numeric_id_seq RESTART WITH 1000;
 ALTER SEQUENCE IF EXISTS profiles_user_numeric_id_seq RESTART WITH 5000;
 
--- 7. RLS POLICIES (With DROP commands to avoid "Already Exists" error)
+-- 7. RLS POLICIES
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
 CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
@@ -107,37 +105,7 @@ CREATE POLICY "Organizers can insert tournaments" ON public.tournaments FOR INSE
 DROP POLICY IF EXISTS "Organizers can update own tournaments" ON public.tournaments;
 CREATE POLICY "Organizers can update own tournaments" ON public.tournaments FOR UPDATE USING (auth.uid() = organizer_id OR EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'superadmin'));
 
-ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Teams viewable by everyone" ON public.teams;
-CREATE POLICY "Teams viewable by everyone" ON public.teams FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Organizers can manage teams" ON public.teams;
-CREATE POLICY "Organizers can manage teams" ON public.teams FOR ALL USING (EXISTS (SELECT 1 FROM public.tournaments WHERE id = tournament_id AND organizer_id = auth.uid() AND is_locked = FALSE));
-
-ALTER TABLE public.team_members ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Team members are viewable by everyone" ON public.team_members;
-CREATE POLICY "Team members are viewable by everyone" ON public.team_members FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Organizers can manage team members" ON public.team_members;
-CREATE POLICY "Organizers can manage team members" ON public.team_members FOR ALL USING (
-    EXISTS (
-        SELECT 1 FROM public.teams 
-        JOIN public.tournaments ON teams.tournament_id = tournaments.id 
-        WHERE teams.id = team_members.team_id 
-        AND tournaments.organizer_id = auth.uid() 
-        AND tournaments.is_locked = FALSE
-    )
-);
-
-ALTER TABLE public.matches ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Matches viewable by everyone" ON public.matches;
-CREATE POLICY "Matches viewable by everyone" ON public.matches FOR SELECT USING (true);
-DROP POLICY IF EXISTS "Organizers or Scorers can update matches" ON public.matches;
-CREATE POLICY "Organizers or Scorers can update matches" ON public.matches FOR UPDATE USING (
-    EXISTS (SELECT 1 FROM public.tournaments WHERE id = tournament_id AND organizer_id = auth.uid())
-    OR
-    status = 'live'
-);
-
--- 8. TRIGGER FOR AUTOMATIC PROFILE CREATION
+-- 8. TRIGGER FOR PROFILES
 CREATE OR REPLACE FUNCTION public.handle_new_user() 
 RETURNS TRIGGER 
 LANGUAGE plpgsql 
@@ -165,16 +133,16 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
--- 9. RPC FUNCTIONS
+-- 9. RPC FUNCTIONS (WITH EXPLICIT GRANTS)
 CREATE OR REPLACE FUNCTION public.deduct_credits_for_tournament(user_uuid UUID, cost INTEGER)
 RETURNS BOOLEAN AS $$
 DECLARE
     current_credits INTEGER;
 BEGIN
     SELECT credits INTO current_credits FROM public.profiles WHERE id = user_uuid FOR UPDATE;
-    IF current_credits < cost THEN
-        RAISE EXCEPTION 'Insufficient credits';
-    END IF;
+    IF current_credits IS NULL THEN RAISE EXCEPTION 'Profile not found'; END IF;
+    IF current_credits < cost THEN RAISE EXCEPTION 'Insufficient credits'; END IF;
+    
     UPDATE public.profiles SET credits = credits - cost WHERE id = user_uuid;
     INSERT INTO public.credit_transactions (profile_id, amount, type, description)
     VALUES (user_uuid, -cost, 'deduction', 'Tournament hosting fee');
@@ -185,18 +153,20 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.add_credits_after_payment(user_uuid UUID, topup_amount INTEGER, payment_id TEXT)
 RETURNS BOOLEAN AS $$
 BEGIN
+    -- Ensure profile exists
+    IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE id = user_uuid) THEN
+        RAISE EXCEPTION 'Profile record not found for user %. Please refresh and sync profile.', user_uuid;
+    END IF;
+
     UPDATE public.profiles SET credits = credits + topup_amount WHERE id = user_uuid;
     INSERT INTO public.credit_transactions (profile_id, amount, type, description, razorpay_payment_id)
-    VALUES (user_uuid, topup_amount, 'purchase', 'Credit Top-up via Razorpay', payment_id);
+    VALUES (user_uuid, topup_amount, 'purchase', 'Credit Top-up', payment_id);
     RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- ==========================================================
--- FOR EXISTING USERS:
--- If you signed up before running this script, run this 
--- command to create your profile manually:
---
--- INSERT INTO public.profiles (id, full_name, username, email) 
--- VALUES ('YOUR-USER-ID-HERE', 'Your Name', 'username', 'email@example.com');
--- ==========================================================
+-- IMPORTANT: Grant execute permissions to public/authenticated users
+GRANT EXECUTE ON FUNCTION public.deduct_credits_for_tournament(UUID, INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.deduct_credits_for_tournament(UUID, INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION public.add_credits_after_payment(UUID, INTEGER, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.add_credits_after_payment(UUID, INTEGER, TEXT) TO service_role;
