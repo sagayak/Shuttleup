@@ -8,12 +8,12 @@ import TournamentView from './pages/TournamentView';
 import ScoringView from './pages/ScoringView';
 import Navbar from './components/Navbar';
 
+type AppState = 'initializing' | 'unauthenticated' | 'loading_profile' | 'no_profile' | 'ready';
+
 const App: React.FC = () => {
+  const [appState, setAppState] = useState<AppState>('initializing');
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [slowLoad, setSlowLoad] = useState(false);
-  const [profileError, setProfileError] = useState(false);
   const [isPinVerified, setIsPinVerified] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [currentPage, setCurrentPage] = useState<{ name: string; params?: any }>({ name: 'dashboard' });
@@ -22,36 +22,27 @@ const App: React.FC = () => {
   const SUPER_PIN = "31218";
 
   useEffect(() => {
-    let timeout: any;
-
+    // 1. Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       console.log("Auth Event:", _event);
-      setSession(newSession);
-      if (newSession) {
-        // Start a timer for slow loading detection
-        timeout = setTimeout(() => setSlowLoad(true), 5000);
-        await fetchProfile(newSession.user.id);
-        clearTimeout(timeout);
-        setSlowLoad(false);
-      } else {
+      if (!newSession) {
+        setSession(null);
         setProfile(null);
-        setIsPinVerified(false);
-        setProfileError(false);
-        setLoading(false);
-        setSlowLoad(false);
+        setAppState('unauthenticated');
+      } else {
+        setSession(newSession);
+        fetchProfile(newSession.user.id);
       }
     });
 
+    // 2. Initial session check
     const checkInitialSession = async () => {
       const { data: { session: initialSession } } = await supabase.auth.getSession();
-      setSession(initialSession);
       if (initialSession) {
-        timeout = setTimeout(() => setSlowLoad(true), 5000);
-        await fetchProfile(initialSession.user.id);
-        clearTimeout(timeout);
-        setSlowLoad(false);
+        setSession(initialSession);
+        fetchProfile(initialSession.user.id);
       } else {
-        setLoading(false);
+        setAppState('unauthenticated');
       }
     };
 
@@ -59,7 +50,6 @@ const App: React.FC = () => {
 
     return () => {
       subscription.unsubscribe();
-      if (timeout) clearTimeout(timeout);
     };
   }, []);
 
@@ -67,10 +57,9 @@ const App: React.FC = () => {
     if (fetchInProgress.current) return;
     fetchInProgress.current = true;
     
+    setAppState('loading_profile');
+    
     try {
-      setLoading(true);
-      setProfileError(false);
-      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -79,33 +68,37 @@ const App: React.FC = () => {
       
       if (error) {
         console.warn("Profile fetch error:", error.message);
+        // PGRST116 means record not found
         if (error.code === 'PGRST116' || error.message.includes('not found')) { 
-          setProfileError(true);
+          setAppState('no_profile');
+        } else {
+          // Some other error (network, etc) - let's try again in a bit or show error
+          setAppState('no_profile');
         }
-        // If it's a genuine error and not just "not found", we still stop loading
-        setLoading(false);
-      } else {
+      } else if (data) {
         setProfile(data);
-        setProfileError(false);
-        if (data.role !== 'superadmin') {
+        if (data.role === 'superadmin') {
+          setIsPinVerified(false); // Force PIN for superadmins
+        } else {
           setIsPinVerified(true);
         }
-        setLoading(false);
+        setAppState('ready');
       }
     } catch (err) {
-      console.error('Error in fetchProfile:', err);
-      setLoading(false);
+      console.error('Catch in fetchProfile:', err);
+      setAppState('no_profile');
     } finally {
       fetchInProgress.current = false;
     }
   };
 
-  const createMissingProfile = async () => {
+  const initializeProfile = async () => {
     if (!session?.user) return;
-    setLoading(true);
-    setProfileError(false);
+    setAppState('loading_profile');
+    
     try {
-      const { error } = await supabase.from('profiles').insert({
+      // Use UPSERT so we don't crash if the record was created by the trigger 1ms ago
+      const { error } = await supabase.from('profiles').upsert({
         id: session.user.id,
         full_name: session.user.user_metadata?.full_name || 'New Player',
         username: session.user.user_metadata?.username || `user_${session.user.id.substring(0, 8)}`,
@@ -114,17 +107,13 @@ const App: React.FC = () => {
         credits: 0
       });
 
-      if (error && !error.message.includes('duplicate key')) {
-        throw error;
-      }
+      if (error) throw error;
       
-      // Successfully created or already existed
+      // Now fetch the newly created profile
       await fetchProfile(session.user.id);
     } catch (err: any) {
-      alert("Profile initialization failed: " + err.message);
-      setProfileError(true);
-    } finally {
-      setLoading(false);
+      alert("Manual Sync Failed: " + err.message);
+      setAppState('no_profile');
     }
   };
 
@@ -133,7 +122,7 @@ const App: React.FC = () => {
     if (pinInput === SUPER_PIN) {
       setIsPinVerified(true);
     } else {
-      alert("Invalid Super PIN. Access Denied.");
+      alert("Invalid Super PIN.");
       setPinInput('');
     }
   };
@@ -143,65 +132,72 @@ const App: React.FC = () => {
     window.scrollTo(0, 0);
   };
 
-  // 1. Auth check
-  if (!session && !loading) {
-    return <AuthPage onAuthSuccess={() => navigateTo('dashboard')} />;
+  // RENDER LOGIC
+  
+  if (appState === 'initializing') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-white">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4"></div>
+        <p className="text-slate-400 font-medium">Checking session...</p>
+      </div>
+    );
   }
 
-  // 2. Profile Error state (Missing Record)
-  if (profileError && !loading) {
+  if (appState === 'unauthenticated') {
+    return <AuthPage onAuthSuccess={() => {}} />;
+  }
+
+  if (appState === 'loading_profile') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-white p-6">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-6"></div>
+        <h2 className="text-xl font-bold text-slate-900">Syncing Profile...</h2>
+        <p className="text-slate-500 text-sm mt-2 text-center max-w-xs">We're retrieving your account details from the database.</p>
+        <button 
+          onClick={() => setAppState('no_profile')}
+          className="mt-12 text-xs text-blue-600 font-bold hover:underline"
+        >
+          Taking too long? Click here.
+        </button>
+      </div>
+    );
+  }
+
+  if (appState === 'no_profile') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-white rounded-3xl p-10 shadow-2xl text-center">
-          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+          <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-8">
+            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
           </div>
-          <h2 className="text-2xl font-bold mb-4">Complete Setup</h2>
-          <p className="text-slate-500 mb-8 text-sm leading-relaxed">We need to create a profile entry for your account to track your credits and tournaments.</p>
-          <button onClick={createMissingProfile} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold mb-4 shadow-lg shadow-blue-100 active:scale-95 transition-all">
-            Initialize Profile
+          <h2 className="text-2xl font-bold mb-4 text-slate-900">Setup Required</h2>
+          <p className="text-slate-500 mb-10 text-sm leading-relaxed">
+            Your account is authenticated, but your profile details aren't synced yet. 
+            This happens on first login or after database resets.
+          </p>
+          <button 
+            onClick={initializeProfile} 
+            className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-100 active:scale-[0.98] transition-all"
+          >
+            Create Profile & Sync Now
           </button>
-          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 text-xs hover:text-red-500">Logout</button>
+          <button 
+            onClick={() => supabase.auth.signOut()} 
+            className="mt-6 text-slate-400 text-xs font-bold uppercase tracking-widest hover:text-red-500 transition-colors"
+          >
+            Logout
+          </button>
         </div>
       </div>
     );
   }
 
-  // 3. Loading state (Syncing)
-  if (loading || (!profile && session)) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-white p-6">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-4"></div>
-        <p className="text-slate-900 font-bold text-lg">Syncing shuttleUp...</p>
-        <p className="text-slate-400 text-sm mt-1">Retrieving your stats & credits</p>
-        
-        {slowLoad && (
-          <div className="mt-12 p-6 bg-slate-50 rounded-2xl border border-slate-100 max-w-xs text-center animate-in fade-in slide-in-from-bottom-4">
-            <p className="text-xs text-slate-500 mb-4">Taking longer than expected?</p>
-            <button 
-              onClick={createMissingProfile}
-              className="w-full py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors"
-            >
-              Force Sync Profile
-            </button>
-            <button 
-              onClick={() => window.location.reload()}
-              className="mt-2 text-[10px] text-blue-600 font-bold underline"
-            >
-              Refresh Page
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // 4. SuperAdmin check
   if (profile?.role === 'superadmin' && !isPinVerified) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="w-full max-w-sm bg-white rounded-3xl p-10 shadow-2xl text-center">
-          <h2 className="text-2xl font-bold mb-8">SuperAdmin PIN</h2>
+          <h2 className="text-2xl font-bold mb-8">SuperAdmin Access</h2>
+          <p className="text-slate-500 text-sm mb-6">Please enter your secondary PIN.</p>
           <form onSubmit={handlePinSubmit} className="space-y-4">
             <input 
               autoFocus
@@ -209,16 +205,17 @@ const App: React.FC = () => {
               placeholder="•••••"
               value={pinInput}
               onChange={(e) => setPinInput(e.target.value)}
-              className="w-full text-center text-3xl tracking-[1em] font-bold py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none"
+              className="w-full text-center text-3xl tracking-[1em] font-bold py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500"
               maxLength={5}
             />
-            <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">Verify</button>
+            <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">Verify Admin</button>
           </form>
         </div>
       </div>
     );
   }
 
+  // If we got here, state is READY and profile is loaded
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Navbar profile={profile} onNavigate={navigateTo} />
