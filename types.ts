@@ -6,7 +6,6 @@ export interface Profile {
   user_numeric_id: number;
   username: string;
   full_name: string;
-  email: string;
   role: UserRole;
   credits: number;
   created_at: string;
