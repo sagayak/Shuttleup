@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { Profile } from './types';
 import AuthPage from './pages/AuthPage';
@@ -12,50 +12,65 @@ const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [slowLoad, setSlowLoad] = useState(false);
   const [profileError, setProfileError] = useState(false);
   const [isPinVerified, setIsPinVerified] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [currentPage, setCurrentPage] = useState<{ name: string; params?: any }>({ name: 'dashboard' });
 
+  const fetchInProgress = useRef(false);
   const SUPER_PIN = "31218";
 
   useEffect(() => {
-    // Listen for auth changes
+    let timeout: any;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       console.log("Auth Event:", _event);
       setSession(newSession);
       if (newSession) {
+        // Start a timer for slow loading detection
+        timeout = setTimeout(() => setSlowLoad(true), 5000);
         await fetchProfile(newSession.user.id);
+        clearTimeout(timeout);
+        setSlowLoad(false);
       } else {
         setProfile(null);
         setIsPinVerified(false);
         setProfileError(false);
         setLoading(false);
+        setSlowLoad(false);
       }
     });
 
-    // Initial session check
-    const checkSession = async () => {
+    const checkInitialSession = async () => {
       const { data: { session: initialSession } } = await supabase.auth.getSession();
       setSession(initialSession);
       if (initialSession) {
+        timeout = setTimeout(() => setSlowLoad(true), 5000);
         await fetchProfile(initialSession.user.id);
+        clearTimeout(timeout);
+        setSlowLoad(false);
       } else {
         setLoading(false);
       }
     };
 
-    checkSession();
+    checkInitialSession();
 
     return () => {
       subscription.unsubscribe();
+      if (timeout) clearTimeout(timeout);
     };
   }, []);
 
   const fetchProfile = async (userId: string) => {
+    if (fetchInProgress.current) return;
+    fetchInProgress.current = true;
+    
     try {
       setLoading(true);
       setProfileError(false);
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -63,27 +78,32 @@ const App: React.FC = () => {
         .single();
       
       if (error) {
+        console.warn("Profile fetch error:", error.message);
         if (error.code === 'PGRST116' || error.message.includes('not found')) { 
-          console.warn('Profile record missing in database.');
           setProfileError(true);
         }
-        throw error;
-      }
-      
-      setProfile(data);
-      if (data.role !== 'superadmin') {
-        setIsPinVerified(true);
+        // If it's a genuine error and not just "not found", we still stop loading
+        setLoading(false);
+      } else {
+        setProfile(data);
+        setProfileError(false);
+        if (data.role !== 'superadmin') {
+          setIsPinVerified(true);
+        }
+        setLoading(false);
       }
     } catch (err) {
-      console.error('Error fetching profile:', err);
-    } finally {
+      console.error('Error in fetchProfile:', err);
       setLoading(false);
+    } finally {
+      fetchInProgress.current = false;
     }
   };
 
   const createMissingProfile = async () => {
     if (!session?.user) return;
     setLoading(true);
+    setProfileError(false);
     try {
       const { error } = await supabase.from('profiles').insert({
         id: session.user.id,
@@ -94,10 +114,15 @@ const App: React.FC = () => {
         credits: 0
       });
 
-      if (error) throw error;
+      if (error && !error.message.includes('duplicate key')) {
+        throw error;
+      }
+      
+      // Successfully created or already existed
       await fetchProfile(session.user.id);
     } catch (err: any) {
-      alert("Manual creation failed: " + err.message);
+      alert("Profile initialization failed: " + err.message);
+      setProfileError(true);
     } finally {
       setLoading(false);
     }
@@ -118,35 +143,55 @@ const App: React.FC = () => {
     window.scrollTo(0, 0);
   };
 
-  // 1. Loading state when we have a session but no profile yet
-  if (loading && !profile && session) {
+  // 1. Auth check
+  if (!session && !loading) {
+    return <AuthPage onAuthSuccess={() => navigateTo('dashboard')} />;
+  }
+
+  // 2. Profile Error state (Missing Record)
+  if (profileError && !loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-white">
-        <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
-          <p className="text-slate-400 font-medium text-sm animate-pulse">Loading Profile...</p>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white rounded-3xl p-10 shadow-2xl text-center">
+          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+          </div>
+          <h2 className="text-2xl font-bold mb-4">Complete Setup</h2>
+          <p className="text-slate-500 mb-8 text-sm leading-relaxed">We need to create a profile entry for your account to track your credits and tournaments.</p>
+          <button onClick={createMissingProfile} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold mb-4 shadow-lg shadow-blue-100 active:scale-95 transition-all">
+            Initialize Profile
+          </button>
+          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 text-xs hover:text-red-500">Logout</button>
         </div>
       </div>
     );
   }
 
-  // 2. Auth state
-  if (!session) {
-    return <AuthPage onAuthSuccess={() => navigateTo('dashboard')} />;
-  }
-
-  // 3. Error state
-  if (profileError) {
+  // 3. Loading state (Syncing)
+  if (loading || (!profile && session)) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-3xl p-10 shadow-2xl text-center">
-          <h2 className="text-2xl font-bold mb-4">Profile Sync Required</h2>
-          <p className="text-slate-500 mb-6 text-sm">We couldn't find your profile record. Click initialize to create one.</p>
-          <button onClick={createMissingProfile} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold mb-4 shadow-lg shadow-blue-100">
-            Initialize Profile
-          </button>
-          <button onClick={() => supabase.auth.signOut()} className="text-slate-400 text-xs hover:text-red-500">Logout</button>
-        </div>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-white p-6">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600 mb-4"></div>
+        <p className="text-slate-900 font-bold text-lg">Syncing shuttleUp...</p>
+        <p className="text-slate-400 text-sm mt-1">Retrieving your stats & credits</p>
+        
+        {slowLoad && (
+          <div className="mt-12 p-6 bg-slate-50 rounded-2xl border border-slate-100 max-w-xs text-center animate-in fade-in slide-in-from-bottom-4">
+            <p className="text-xs text-slate-500 mb-4">Taking longer than expected?</p>
+            <button 
+              onClick={createMissingProfile}
+              className="w-full py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              Force Sync Profile
+            </button>
+            <button 
+              onClick={() => window.location.reload()}
+              className="mt-2 text-[10px] text-blue-600 font-bold underline"
+            >
+              Refresh Page
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -170,15 +215,6 @@ const App: React.FC = () => {
             <button type="submit" className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold">Verify</button>
           </form>
         </div>
-      </div>
-    );
-  }
-
-  // Final fallback: Still loading
-  if (!profile) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-white">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
       </div>
     );
   }
