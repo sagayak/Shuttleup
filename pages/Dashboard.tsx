@@ -28,10 +28,6 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
     location: '',
   });
 
-  // Updated logic: Check if key is the placeholder OR if it's explicitly for testing
-  const RAZORPAY_KEY = 'rzp_test_S2DiM1kIVHybBI'; 
-  const isSimulationMode = RAZORPAY_KEY.includes('placeholder') || RAZORPAY_KEY.startsWith('rzp_test');
-
   useEffect(() => {
     fetchTournaments();
   }, []);
@@ -54,10 +50,10 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
     }
 
     setLoading(true);
-    console.group("💳 Payment Finalization");
+    console.group("💳 Dev-Bypass Credit Addition");
     console.log("User ID:", profile.id);
-    console.log("Amount:", topUpAmount);
-    console.log("Payment ID:", paymentId);
+    console.log("Adding Amount:", topUpAmount);
+    console.log("Mock Payment ID:", paymentId);
 
     try {
       const { data, error } = await supabase.rpc('add_credits_after_payment', {
@@ -68,22 +64,21 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
 
       if (error) {
         console.error("RPC Error:", error);
-        // Specialized error message for missing functions
         if (error.message.includes('function') && error.message.includes('not found')) {
-          throw new Error("The payment function hasn't been created in your Supabase database yet. Please run the code in schema.txt in the SQL Editor.");
+          throw new Error("The database function 'add_credits_after_payment' is missing. Please run the SQL in schema.txt first.");
         }
         throw error;
       }
       
       console.log("✅ Success result:", data);
-      alert(`Payment Verified! ₹${topUpAmount} has been added to your balance.`);
+      alert(`Success! ₹${topUpAmount} test credits added to your account.`);
       setIsTopUpOpen(false);
       
-      // Force refresh to show new balance
-      setTimeout(() => window.location.reload(), 800);
+      // Refresh to show updated credits
+      setTimeout(() => window.location.reload(), 500);
     } catch (err: any) {
-      console.error("❌ Finalize Payment Error:", err);
-      alert(`Credit sync failed: ${err.message}`);
+      console.error("❌ Credit Addition Error:", err);
+      alert(`Failed to add credits: ${err.message}`);
     } finally {
       console.groupEnd();
       setLoading(false);
@@ -92,52 +87,10 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
 
   const handleTopUp = () => {
     if (!profile) return;
-
-    // Simulation logic
-    if (isSimulationMode) {
-      const confirmSim = window.confirm(`[SIMULATION MODE] This will mock a real transaction for ₹${topUpAmount}.\n\nProceed with simulation?`);
-      if (confirmSim) {
-        finalizePayment(`SIM_PAY_${Date.now()}`);
-      }
-      return;
-    }
-
-    // Real Razorpay Logic
-    if (typeof window.Razorpay === 'undefined') {
-      const fallback = window.confirm("Razorpay SDK not found (blocked by browser?). Would you like to use SIMULATION MODE instead?");
-      if (fallback) {
-        finalizePayment(`SIM_FALLBACK_${Date.now()}`);
-      }
-      return;
-    }
-
-    const options = {
-      key: RAZORPAY_KEY, 
-      amount: topUpAmount * 100, 
-      currency: "INR",
-      name: "ShuttleUp",
-      description: `Credits Purchase`,
-      handler: async function (response: any) {
-        finalizePayment(response.razorpay_payment_id);
-      },
-      prefill: {
-        name: profile.full_name,
-        email: profile.email,
-      },
-      theme: { color: "#2563eb" }
-    };
-
-    try {
-      const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', (resp: any) => {
-        console.error("Payment failure response:", resp);
-        alert("Payment Failed: " + resp.error.description);
-      });
-      rzp.open();
-    } catch (err: any) {
-      console.error("Razorpay Modal Launch Error:", err);
-      alert("Failed to launch payment window. Check console for details.");
-    }
+    
+    // TEMPORARY: Bypass Razorpay for testing
+    // We directly finalize with a mock ID
+    finalizePayment(`DEV_BYPASS_${Date.now()}`);
   };
 
   const handleCreateTournament = async (e: React.FormEvent) => {
@@ -177,7 +130,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
       setIsCreating(false);
       onNavigate('tournament', { id: data.id });
     } catch (err: any) {
-      alert("Error: " + err.message);
+      alert("Error creating tournament: " + err.message);
     } finally {
       setLoading(false);
     }
@@ -214,16 +167,14 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
         </div>
 
         <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 flex flex-col justify-between relative overflow-hidden">
-          {isSimulationMode && (
-            <div className="absolute top-2 right-2 px-2 py-0.5 bg-amber-100 text-amber-700 text-[8px] font-bold rounded uppercase tracking-tighter">Test Mode</div>
-          )}
+          <div className="absolute top-2 right-2 px-2 py-0.5 bg-green-100 text-green-700 text-[8px] font-bold rounded uppercase tracking-tighter">Instant Mode</div>
           <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Your Balance</p>
           <p className="mt-4 text-5xl font-bebas text-slate-900">₹{profile?.credits || 0}</p>
           <button 
             onClick={() => setIsTopUpOpen(true)}
             className="mt-4 w-full py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm font-bold text-blue-600 hover:bg-blue-100 transition-colors"
           >
-            Top Up Credits
+            Add Test Credits
           </button>
         </div>
       </section>
@@ -318,8 +269,8 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
               <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               </div>
-              <h3 className="text-2xl font-bold text-slate-900 mb-2">Buy Credits</h3>
-              <p className="text-slate-500 mb-8 text-sm">1 Credit = ₹1. Choose amount below.</p>
+              <h3 className="text-2xl font-bold text-slate-900 mb-2">Test Credits</h3>
+              <p className="text-slate-500 mb-8 text-sm">Bypassing Payment Gateway. Choose amount to add instantly.</p>
               
               <div className="grid grid-cols-2 gap-3 mb-6">
                 {[200, 500, 1000, 2000].map(amt => (
@@ -339,7 +290,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, onNavigate }) => {
                   disabled={loading}
                   className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all"
                 >
-                  {loading ? 'Processing...' : (isSimulationMode ? `Simulate ₹${topUpAmount} Payment` : `Pay ₹${topUpAmount}`)}
+                  {loading ? 'Adding...' : `Add ₹${topUpAmount} Instantly`}
                 </button>
                 <button 
                   onClick={() => setIsTopUpOpen(false)}
