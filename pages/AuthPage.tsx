@@ -17,15 +17,14 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
   });
 
   /**
-   * Supabase Auth requires an email-formatted string.
-   * We generate a synthetic identity: [username]@shuttleup.com
-   * This is never shown to the user in the UI.
+   * Supabase Auth requires an email format.
+   * We use [username]@shuttle.com internally.
+   * Standard domains like .com are less likely to be blocked by validators.
    */
   const getSyntheticIdentity = (username: string) => {
-    // Strictly alphanumeric for the local part to ensure max compatibility
     const clean = username.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
     if (!clean || clean.length < 3) return null;
-    return `${clean}@shuttleup.com`;
+    return `${clean}@shuttle.com`;
   };
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -53,6 +52,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
       else {
         if (!formData.fullName.trim()) throw new Error("Full Name is required.");
         
+        // SignUp with synthetic identity
         const { data, error } = await supabase.auth.signUp({
           email: syntheticEmail,
           password: formData.password,
@@ -66,35 +66,39 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
         
         if (error) throw error;
         
+        // If signUp succeeded, it might not return a session if confirmation is on.
+        // We attempt a manual sign-in immediately.
         if (data.session) {
           onAuthSuccess();
         } else {
-          // Attempt manual login if session wasn't returned immediately
           const { error: loginError } = await supabase.auth.signInWithPassword({
             email: syntheticEmail,
             password: formData.password,
           });
-          if (loginError) throw new Error("Account created! Please try to log in now.");
+          if (loginError) {
+            // If even manual login fails after signup, something is wrong with the session.
+            throw new Error("Profile created successfully! Please Log In now.");
+          }
           onAuthSuccess();
         }
       }
     } catch (err: any) {
-      console.error("Auth Failure Trace:", err);
-      let rawMessage = err.message || "An unexpected error occurred.";
+      console.error("Auth System Error:", err);
+      let msg = err.message || "Connection failed. Try again.";
       
-      // INTERCEPTOR: If the server says "email", we translate it to "username" for the user.
-      if (rawMessage.toLowerCase().includes("email")) {
-        if (rawMessage.toLowerCase().includes("invalid")) {
-          setErrorMsg("Username format is invalid. Use letters and numbers only.");
-        } else if (rawMessage.toLowerCase().includes("already registered")) {
-          setErrorMsg("This username is already taken. Try another.");
+      // MAPPING: Hide all "Email" terminology from the user.
+      if (msg.toLowerCase().includes("email")) {
+        if (msg.toLowerCase().includes("invalid")) {
+          setErrorMsg("Username format is not allowed. Use letters and numbers only.");
+        } else if (msg.toLowerCase().includes("already registered") || msg.toLowerCase().includes("taken")) {
+          setErrorMsg("This username is already taken.");
         } else {
-          setErrorMsg("There was a problem with your identifier. Please try a different username.");
+          setErrorMsg("There was a problem with your username. Please try a different one.");
         }
-      } else if (rawMessage.toLowerCase().includes("invalid login")) {
+      } else if (msg.toLowerCase().includes("invalid login")) {
         setErrorMsg("Incorrect username or password.");
       } else {
-        setErrorMsg(rawMessage);
+        setErrorMsg(msg);
       }
     } finally {
       setLoading(false);
@@ -102,98 +106,89 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col md:flex-row overflow-hidden">
-      {/* Dynamic Brand Sidebar */}
-      <div className="hidden md:flex md:w-[45%] bg-blue-600 p-16 flex-col justify-between text-white relative">
-        <div className="absolute inset-0 opacity-10 pointer-events-none overflow-hidden">
-          <div className="absolute -top-24 -left-24 w-96 h-96 border-[40px] border-white rounded-full"></div>
-          <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-white rounded-full"></div>
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row overflow-hidden">
+      {/* Brand Side */}
+      <div className="hidden md:flex md:w-5/12 bg-blue-600 p-12 flex-col justify-between text-white relative">
+        <div className="absolute top-0 right-0 p-20 opacity-10">
+          <svg className="w-80 h-80" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" /></svg>
         </div>
-        
-        <div className="flex items-center gap-4 relative z-10">
-          <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-blue-600 font-bebas text-3xl rotate-6 shadow-2xl">S</div>
-          <span className="text-3xl font-bold tracking-tight">ShuttleUp</span>
+        <div className="flex items-center gap-3 relative z-10">
+          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-blue-600 font-bebas text-2xl rotate-12 shadow-lg">S</div>
+          <span className="text-2xl font-bold tracking-tight">ShuttleUp</span>
         </div>
-
         <div className="relative z-10">
-          <h1 className="text-6xl font-bebas tracking-widest uppercase leading-[0.9] mb-6">Master<br/>The Court.</h1>
-          <p className="text-blue-100 text-lg opacity-90 max-w-sm font-medium leading-relaxed">
-            Connect, compete, and climb the ranks with the world's most intuitive badminton engine.
+          <h1 className="text-6xl font-bebas leading-tight tracking-wider uppercase">Your Court.<br/>No Compromise.</h1>
+          <p className="mt-4 text-blue-100 text-sm max-w-xs font-medium opacity-80">
+            The world's most robust badminton tournament engine. Powered by pure username authentication.
           </p>
         </div>
-
-        <div className="flex items-center gap-6 relative z-10">
-          <div className="flex -space-x-3">
-            {[1,2,3].map(i => (
-              <div key={i} className="w-10 h-10 rounded-full border-2 border-blue-600 bg-blue-400 flex items-center justify-center text-[10px] font-bold">P{i}</div>
-            ))}
-          </div>
-          <span className="text-[10px] uppercase font-bold tracking-[0.3em] opacity-60">Joined 2.4k+ Players</span>
+        <div className="flex gap-2 relative z-10">
+          <div className="px-3 py-1 bg-white/10 rounded-full border border-white/20 text-[8px] font-bold uppercase tracking-widest">v1.8 Stable</div>
         </div>
       </div>
 
-      {/* Auth Interaction Area */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-50 md:bg-white">
-        <div className="w-full max-w-md">
-          <div className="mb-12 text-center md:text-left">
-            <h2 className="text-4xl font-bold text-slate-900 tracking-tight mb-3">
-              {mode === 'login' ? 'Welcome Back' : 'Get Started'}
+      {/* Form Side */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12">
+        <div className="w-full max-w-md bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl border border-slate-100">
+          <div className="mb-10 text-center md:text-left">
+            <h2 className="text-3xl font-bold text-slate-900 mb-2">
+              {mode === 'login' ? 'Welcome Back' : 'Create Profile'}
             </h2>
-            <p className="text-slate-500 font-medium">
-              {mode === 'login' ? 'Sign in to access your tournament dashboard.' : 'Create your unique player identity today.'}
+            <p className="text-slate-400 text-sm font-medium">
+              {mode === 'login' ? 'Sign in with your unique username.' : 'Pick a username and start competing.'}
             </p>
           </div>
 
           {errorMsg && (
-            <div className="mb-8 p-5 bg-red-50 text-red-700 rounded-[2rem] text-xs font-bold flex items-center gap-4 border border-red-100 animate-in fade-in zoom-in-95">
-              <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-              </div>
+            <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-xs font-bold flex items-center gap-3 animate-in fade-in zoom-in-95">
+              <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
               <span>{errorMsg}</span>
             </div>
           )}
 
           <form onSubmit={handleAuth} className="space-y-6">
             {mode === 'signup' && (
-              <div className="animate-in slide-in-from-top-4 duration-300">
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">Display Name</label>
+              <div className="animate-in slide-in-from-top-2 duration-300">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">Full Name</label>
                 <input 
                   required
                   type="text" 
+                  autoComplete="name"
                   value={formData.fullName}
                   onChange={e => setFormData({...formData, fullName: e.target.value})}
-                  className="w-full bg-slate-50 border-2 border-transparent rounded-3xl px-6 py-5 focus:border-blue-500 focus:bg-white outline-none transition-all placeholder:text-slate-300 font-semibold text-slate-800 shadow-sm"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-slate-300 font-medium"
                   placeholder="e.g. Viktor Axelsen"
                 />
               </div>
             )}
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">Username</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">Username</label>
               <input 
                 required
                 type="text" 
                 autoCapitalize="none"
+                autoComplete="username"
                 value={formData.username}
                 onChange={e => {
-                  // Instant cleaning to prevent any illegal characters
                   const val = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '');
                   setFormData({...formData, username: val});
                 }}
-                className="w-full bg-slate-50 border-2 border-transparent rounded-3xl px-6 py-5 focus:border-blue-500 focus:bg-white outline-none transition-all placeholder:text-slate-300 font-mono text-sm shadow-sm"
-                placeholder="smash_pro_23"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-slate-300 font-mono text-sm"
+                placeholder="smash_king_99"
               />
-              <p className="mt-2 text-[10px] text-slate-400 ml-1">Only letters and numbers allowed.</p>
+              <p className="mt-2 text-[9px] text-slate-400 ml-1 italic">Username must be letters and numbers only.</p>
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">Password</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 ml-1">Password</label>
               <input 
                 required
                 type="password" 
+                autoComplete={mode === 'login' ? "current-password" : "new-password"}
                 value={formData.password}
                 onChange={e => setFormData({...formData, password: e.target.value})}
-                className="w-full bg-slate-50 border-2 border-transparent rounded-3xl px-6 py-5 focus:border-blue-500 focus:bg-white outline-none transition-all placeholder:text-slate-300 shadow-sm"
+                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-slate-300"
                 placeholder="••••••••"
               />
             </div>
@@ -201,33 +196,33 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full py-5 bg-slate-900 text-white rounded-3xl font-bold text-lg shadow-2xl hover:bg-blue-600 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none mt-4"
+              className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-xl shadow-blue-100 hover:bg-blue-700 active:scale-[0.98] transition-all disabled:opacity-50"
             >
               {loading ? (
-                <span className="flex items-center justify-center gap-3">
+                <div className="flex items-center justify-center gap-2">
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                  Verifying...
-                </span>
+                  <span>Verifying...</span>
+                </div>
               ) : (
                 mode === 'login' ? 'Sign In' : 'Create Profile'
               )}
             </button>
           </form>
 
-          <div className="mt-12 pt-8 border-t border-slate-100 text-center">
+          <div className="mt-10 pt-8 border-t border-slate-100 text-center">
             {mode === 'login' ? (
               <button 
                 onClick={() => { setMode('signup'); setErrorMsg(null); }}
-                className="text-slate-500 text-sm font-semibold group"
+                className="text-slate-500 text-sm font-medium group"
               >
-                Don't have an account? <span className="text-blue-600 font-bold group-hover:underline decoration-2">Register Now</span>
+                New player? <span className="text-blue-600 font-bold group-hover:underline">Join ShuttleUp</span>
               </button>
             ) : (
               <button 
                 onClick={() => { setMode('login'); setErrorMsg(null); }}
-                className="text-slate-500 text-sm font-semibold group"
+                className="text-slate-500 text-sm font-medium group"
               >
-                Already have a profile? <span className="text-blue-600 font-bold group-hover:underline decoration-2">Log In</span>
+                Already registered? <span className="text-blue-600 font-bold group-hover:underline">Sign In</span>
               </button>
             )}
           </div>

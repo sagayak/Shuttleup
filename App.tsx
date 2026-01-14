@@ -86,11 +86,15 @@ const App: React.FC = () => {
     setAppState('loading_profile');
     
     try {
+      // CRITICAL: We MUST include the 'email' field here.
+      // The profiles table has a NOT NULL constraint on email.
+      // Even though we use a synthetic username@shuttle.com identity, 
+      // the database still requires it to be stored.
       const { error } = await supabase.from('profiles').upsert({
         id: session.user.id,
         full_name: session.user.user_metadata?.full_name || 'Player',
         username: session.user.user_metadata?.username || `u_${session.user.id.substring(0, 8)}`,
-        // We do NOT send email here as we are moving to a pure username system
+        email: session.user.email, // Passing synthetic identity to DB
         role: 'player',
         credits: 0
       });
@@ -148,9 +152,10 @@ const App: React.FC = () => {
             <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
           </div>
           <h2 className="text-2xl font-bold mb-4">Finalizing Profile</h2>
+          <p className="text-slate-500 text-sm mb-8 leading-relaxed">We're setting up your court credentials. This will only take a second.</p>
           <button 
             onClick={initializeProfile} 
-            className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-100"
+            className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold shadow-xl shadow-blue-100 active:scale-95 transition-all"
           >
             Enter Dashboard
           </button>
@@ -163,7 +168,7 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="w-full max-w-sm bg-white rounded-3xl p-10 shadow-2xl text-center">
-          <h2 className="text-2xl font-bold mb-8">Admin Verification</h2>
+          <h2 className="text-2xl font-bold mb-8 text-slate-900">Admin Security</h2>
           <form onSubmit={handlePinSubmit} className="space-y-4">
             <input 
               autoFocus
@@ -174,7 +179,7 @@ const App: React.FC = () => {
               className="w-full text-center text-3xl tracking-[1em] font-bold py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500"
               maxLength={5}
             />
-            <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold">Unlock Admin</button>
+            <button type="submit" className="w-full py-5 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-900/10">Unlock System</button>
           </form>
         </div>
       </div>
